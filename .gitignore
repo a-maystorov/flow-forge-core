@@ -1,0 +1,48 @@
+# Node modules
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+
+# Build outputs
+dist/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# IDE-specific files (optional, based on what you use)
+.vscode/
+.idea/
+
+# Coverage directory for testing
+coverage/
+
+# Dependency directories
+npm_modules/
+yarn.lock
+package-lock.json
+
+# Optional: Docker related files
+docker-compose.override.yml
+
+# Optional: ESLint and Prettier cache
+.eslintcache
+
+# MacOS-specific
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.temp
