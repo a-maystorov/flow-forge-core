@@ -22,7 +22,7 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       ...prettierConfig.rules,
-      'prettier/prettier': 'error', // Ensures Prettier formatting issues are reported by ESLint
+      'prettier/prettier': 'error', // Marks Prettier issues as errors for ESLint
     },
   },
 ];
