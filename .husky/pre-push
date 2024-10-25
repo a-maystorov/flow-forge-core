@@ -1,2 +1,4 @@
-# TODO: Add later when
-# npm run lint && npm test
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+npm run lint && npm test
