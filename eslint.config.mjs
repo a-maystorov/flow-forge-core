@@ -7,6 +7,7 @@ import prettierPlugin from 'eslint-plugin-prettier';
 export default [
   {
     files: ['**/*.{js,mjs,cjs,ts}'],
+    ignores: ['dist/**'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -22,7 +23,7 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       ...prettierConfig.rules,
-      'prettier/prettier': 'error', // Marks Prettier issues as errors for ESLint
+      'prettier/prettier': 'error', // Ensures Prettier formatting issues are reported by ESLint
     },
   },
 ];
