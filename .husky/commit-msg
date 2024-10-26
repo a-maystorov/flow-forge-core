@@ -1,3 +1,4 @@
+# TODO: Line 2 and 3 won't work on husky v10, should remove.
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
