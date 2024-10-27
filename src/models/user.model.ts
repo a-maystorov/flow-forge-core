@@ -1,4 +1,5 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { sign } from 'jsonwebtoken';
+import mongoose, { Document, Model, Schema } from 'mongoose';
 
 export interface IUser extends Document {
   username: string;
@@ -6,12 +7,31 @@ export interface IUser extends Document {
   passwordHash: string;
 }
 
-const UserSchema: Schema = new Schema({
+interface IUserMethods {
+  generateAuthToken(): string;
+}
+
+type UserModel = Model<IUser, {}, IUserMethods>;
+
+const UserSchema: Schema = new Schema<IUser, UserModel, IUserMethods>({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
 });
 
-const User = mongoose.model<IUser>('User', UserSchema);
+UserSchema.method('generateAuthToken', function generateAuthToken() {
+  const token = sign(
+    {
+      _id: this._id,
+      username: this.username,
+      email: this.email,
+    },
+    process.env.JWT_SECRET as string
+  );
+
+  return token;
+});
+
+const User = mongoose.model<IUser, UserModel>('User', UserSchema);
 
 export default User;
