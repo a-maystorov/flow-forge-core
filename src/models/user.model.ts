@@ -11,7 +11,7 @@ interface IUserMethods {
   generateAuthToken(): string;
 }
 
-type UserModel = Model<IUser, {}, IUserMethods>;
+type UserModel = Model<IUser, object, IUserMethods>;
 
 const UserSchema: Schema = new Schema<IUser, UserModel, IUserMethods>({
   username: { type: String, required: true, unique: true },
