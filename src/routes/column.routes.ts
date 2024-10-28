@@ -63,4 +63,21 @@ router.put('/:columnId', authMiddleware, async (req, res) => {
   }
 });
 
+router.delete('/:columnId', authMiddleware, async (req, res) => {
+  try {
+    const { columnId } = req.params;
+
+    const column = await Column.findByIdAndDelete(columnId);
+
+    if (!column) {
+      res.status(404).json({ message: 'Column not found' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Column deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 export default router;
