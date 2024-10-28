@@ -2,6 +2,7 @@ import express, { Response } from 'express';
 import { z } from 'zod';
 import authMiddleware, { AuthRequest } from '../middleware/authMiddleware';
 import Board from '../models/board.model';
+import Task from '../models/task.model';
 import Subtask from '../models/subtask.model';
 
 const router = express.Router();
@@ -49,7 +50,6 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Subtasks
 const subtaskCreationSchema = z.object({
   name: z.string().min(1, 'Subtask name is required'),
-  taskId: z.string(),
 });
 
 router.post(
@@ -58,10 +58,22 @@ router.post(
   async (req: AuthRequest, res: Response) => {
     try {
       const parsedData = subtaskCreationSchema.parse(req.body);
-      const { name, taskId } = parsedData;
+      const { name } = parsedData;
+      const { taskId } = req.params;
 
-      const subtask = new Subtask({ name, taskId });
+      const subtask = new Subtask({ name });
       await subtask.save();
+
+      const task = await Task.findByIdAndUpdate(
+        taskId,
+        { $push: { subtasks: subtask._id } },
+        { new: true }
+      );
+
+      if (!task) {
+        res.status(404).json({ message: 'Task not found' });
+        return;
+      }
 
       res.status(201).json(subtask);
     } catch (error) {
@@ -104,12 +116,15 @@ router.delete(
   authMiddleware,
   async (req: AuthRequest, res: Response) => {
     try {
-      const { subtaskId } = req.params;
+      const { subtaskId, taskId } = req.params;
+
       const subtask = await Subtask.findByIdAndDelete(subtaskId);
       if (!subtask) {
         res.status(404).json({ message: 'Subtask not found' });
         return;
       }
+
+      await Task.findByIdAndUpdate(taskId, { $pull: { subtasks: subtaskId } });
 
       res.status(200).json({ message: 'Subtask deleted successfully' });
     } catch (error) {

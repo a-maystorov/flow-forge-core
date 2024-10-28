@@ -4,10 +4,7 @@ export interface ITask extends Document {
   title: string;
   description: string;
   status: 'Todo' | 'Doing' | 'Done';
-  subtasks: {
-    title: string;
-    isCompleted: boolean;
-  }[];
+  subtasks: Types.ObjectId[];
   boardId: Types.ObjectId;
 }
 
@@ -15,12 +12,7 @@ const TaskSchema: Schema = new Schema({
   title: { type: String, required: true },
   description: { type: String },
   status: { type: String, enum: ['Todo', 'Doing', 'Done'], default: 'Todo' },
-  subtasks: [
-    {
-      title: { type: String, required: true },
-      isCompleted: { type: Boolean, default: false },
-    },
-  ],
+  subtasks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subtask' }],
   boardId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Board',
@@ -29,5 +21,4 @@ const TaskSchema: Schema = new Schema({
 });
 
 const Task = mongoose.model<ITask>('Task', TaskSchema);
-
 export default Task;
