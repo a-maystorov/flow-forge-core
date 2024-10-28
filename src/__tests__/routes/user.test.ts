@@ -1,7 +1,8 @@
+import bcrypt from 'bcrypt';
 import request from 'supertest';
-import app from '../app';
-import { connectDB, disconnectDB } from '../config/database';
-import User from '../models/user.model';
+import app from '../../app';
+import { connectDB, disconnectDB } from '../../config/database';
+import User from '../../models/user.model';
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';
@@ -58,5 +59,43 @@ describe('User Signup Endpoint', () => {
 
     expect(res.statusCode).toEqual(400);
     expect(res.body.message).toBe('User already exists');
+  });
+});
+
+// TODO: Add more detailed tests.
+describe('User Login Endpoint', () => {
+  it('should login a user successfully and return a JWT token', async () => {
+    const passwordHash = await bcrypt.hash('securepassword', 10);
+    const user = new User({
+      username: 'testuser',
+      email: 'testuser@example.com',
+      passwordHash,
+    });
+
+    await user.save();
+
+    const res = await request(app).post('/api/users/login').send({
+      email: 'testuser@example.com',
+      password: 'securepassword',
+    });
+
+    const isPasswordMatch = await bcrypt.compare(
+      'securepassword',
+      user.passwordHash
+    );
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toHaveProperty('token');
+    expect(isPasswordMatch).toEqual(true);
+  });
+
+  it('should return an error for invalid credentials', async () => {
+    const res = await request(app).post('/api/users/login').send({
+      email: 'wronguser@example.com',
+      password: 'wrongpassword',
+    });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body.message).toBe('Invalid credentials');
   });
 });
