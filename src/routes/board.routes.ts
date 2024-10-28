@@ -58,6 +58,35 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const boardId = req.params.id;
+    const userId = req.userId;
+
+    const parsedData = boardCreationSchema.parse(req.body);
+    const { name } = parsedData;
+
+    const board = await Board.findOneAndUpdate(
+      { _id: boardId, ownerId: userId },
+      { name },
+      { new: true }
+    );
+
+    if (!board) {
+      res.status(404).json({ message: 'Board not found' });
+      return;
+    }
+
+    res.status(200).json(board);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ errors: error.errors });
+    } else {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  }
+});
+
 // Subtasks
 const subtaskCreationSchema = z.object({
   name: z.string().min(1, 'Subtask name is required'),
