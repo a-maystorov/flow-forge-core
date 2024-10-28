@@ -3,10 +3,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 export interface IBoard extends Document {
   name: string;
   ownerId: Types.ObjectId;
-  columns: {
-    name: string;
-    tasks: Types.ObjectId[];
-  }[];
+  columns: Types.ObjectId[];
 }
 
 const BoardSchema: Schema = new Schema({
@@ -18,8 +15,8 @@ const BoardSchema: Schema = new Schema({
   },
   columns: [
     {
-      name: { type: String, required: true },
-      tasks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Column',
     },
   ],
 });
