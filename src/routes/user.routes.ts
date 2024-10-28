@@ -29,7 +29,11 @@ router.post('/signup', async (req: Request, res: Response): Promise<void> => {
     user = new User({ username, email, passwordHash });
     await user.save();
 
-    res.status(201).json(user);
+    const token = user.generateAuthToken();
+    res
+      .header('x-auth-token', token)
+      .status(201)
+      .json({ _id: user._id, username, email });
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ errors: error.errors });
