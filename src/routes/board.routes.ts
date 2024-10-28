@@ -18,6 +18,24 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const boardId = req.params.id;
+    const userId = req.userId;
+
+    const board = await Board.findOne({ _id: boardId, ownerId: userId });
+
+    if (!board) {
+      res.status(404).json({ message: 'Board not found' });
+      return;
+    }
+
+    res.status(200).json(board);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 const boardCreationSchema = z.object({
   name: z.string().min(1, 'Board name is required'),
 });
