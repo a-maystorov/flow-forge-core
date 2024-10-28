@@ -8,24 +8,26 @@ import Subtask from '../models/subtask.model';
 const router = express.Router();
 
 // Boards
+
+router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const boards = await Board.find({ ownerId: req.userId });
+    res.status(200).json(boards);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 const boardCreationSchema = z.object({
   name: z.string().min(1, 'Board name is required'),
-  columns: z
-    .array(
-      z.object({
-        name: z.string().min(1, 'Column name is required'),
-        tasks: z.array(z.string()),
-      })
-    )
-    .optional(),
 });
 
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const parsedData = boardCreationSchema.parse(req.body);
-    const { name, columns } = parsedData;
+    const { name } = parsedData;
 
-    const board = new Board({ name, ownerId: req.userId, columns });
+    const board = new Board({ name, ownerId: req.userId });
     await board.save();
 
     res.status(201).json(board);
@@ -35,15 +37,6 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     } else {
       res.status(500).json({ error: (error as Error).message });
     }
-  }
-});
-
-router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const boards = await Board.find({ ownerId: req.userId });
-    res.status(200).json(boards);
-  } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
   }
 });
 
