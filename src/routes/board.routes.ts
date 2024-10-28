@@ -1,10 +1,12 @@
 import express, { Response } from 'express';
-import Board from '../models/board.model';
-import authMiddleware, { AuthRequest } from '../middleware/authMiddleware';
 import { z } from 'zod';
+import authMiddleware, { AuthRequest } from '../middleware/authMiddleware';
+import Board from '../models/board.model';
+import Subtask from '../models/subtask.model';
 
 const router = express.Router();
 
+// Boards
 const boardCreationSchema = z.object({
   name: z.string().min(1, 'Board name is required'),
   columns: z
@@ -43,5 +45,77 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
     res.status(500).json({ error: (error as Error).message });
   }
 });
+
+// Subtasks
+const subtaskCreationSchema = z.object({
+  name: z.string().min(1, 'Subtask name is required'),
+  taskId: z.string(),
+});
+
+router.post(
+  '/:boardId/tasks/:taskId/subtasks',
+  authMiddleware,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const parsedData = subtaskCreationSchema.parse(req.body);
+      const { name, taskId } = parsedData;
+
+      const subtask = new Subtask({ name, taskId });
+      await subtask.save();
+
+      res.status(201).json(subtask);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ errors: error.errors });
+      } else {
+        res.status(500).json({ error: (error as Error).message });
+      }
+    }
+  }
+);
+
+router.patch(
+  '/:boardId/tasks/:taskId/subtasks/:subtaskId',
+  authMiddleware,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { subtaskId } = req.params;
+      const { name, completed } = req.body;
+
+      const subtask = await Subtask.findByIdAndUpdate(
+        subtaskId,
+        { name, completed },
+        { new: true }
+      );
+      if (!subtask) {
+        res.status(404).json({ message: 'Subtask not found' });
+        return;
+      }
+
+      res.status(200).json(subtask);
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  }
+);
+
+router.delete(
+  '/:boardId/tasks/:taskId/subtasks/:subtaskId',
+  authMiddleware,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { subtaskId } = req.params;
+      const subtask = await Subtask.findByIdAndDelete(subtaskId);
+      if (!subtask) {
+        res.status(404).json({ message: 'Subtask not found' });
+        return;
+      }
+
+      res.status(200).json({ message: 'Subtask deleted successfully' });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  }
+);
 
 export default router;
