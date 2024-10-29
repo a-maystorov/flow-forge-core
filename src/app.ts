@@ -1,9 +1,8 @@
-import express from 'express';
 import dotenv from 'dotenv';
+import express from 'express';
 import { connectDB } from './config/database';
-import userRoutes from './routes/user.routes';
 import boardRoutes from './routes/board.routes';
-import columnRoutes from './routes/column.routes';
+import userRoutes from './routes/user.routes';
 
 dotenv.config();
 
@@ -18,7 +17,6 @@ app.use(express.json());
 
 app.use('/api/users', userRoutes);
 app.use('/api/boards', boardRoutes);
-app.use('/api/boards/:boardId/columns', columnRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello, Flow Forge Core!');

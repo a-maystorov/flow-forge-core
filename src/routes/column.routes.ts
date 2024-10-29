@@ -3,8 +3,9 @@ import { z } from 'zod';
 import authMiddleware, { AuthRequest } from '../middleware/authMiddleware';
 import Board from '../models/board.model';
 import Column from '../models/column.model';
+import taskRoutes from './task.routes';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 const columnCreationSchema = z.object({
   name: z.string().min(1, 'Column name is required'),
@@ -79,5 +80,7 @@ router.delete('/:columnId', authMiddleware, async (req, res) => {
     res.status(500).json({ error: (error as Error).message });
   }
 });
+
+router.use('/:columnId/tasks', taskRoutes);
 
 export default router;

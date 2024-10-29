@@ -4,15 +4,16 @@ import { z } from 'zod';
 import authMiddleware from '../middleware/authMiddleware';
 import Column from '../models/column.model';
 import Task from '../models/task.model';
+import subtaskRoutes from './subtask.routes';
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 
 const taskCreationSchema = z.object({
   title: z.string().min(1, 'Task title is required'),
   description: z.string().optional(),
 });
 
-router.post('', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -50,5 +51,7 @@ router.post('', authMiddleware, async (req, res) => {
     session.endSession();
   }
 });
+
+router.use('/:taskId/subtasks', subtaskRoutes);
 
 export default router;
