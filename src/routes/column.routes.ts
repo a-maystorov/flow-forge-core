@@ -1,6 +1,6 @@
-import express, { Response } from 'express';
+import express from 'express';
 import { z } from 'zod';
-import authMiddleware, { AuthRequest } from '../middleware/authMiddleware';
+import authMiddleware from '../middleware/authMiddleware';
 import Board from '../models/board.model';
 import Column from '../models/column.model';
 import taskRoutes from './task.routes';
@@ -11,7 +11,7 @@ const columnCreationSchema = z.object({
   name: z.string().min(1, 'Column name is required'),
 });
 
-router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.post('/', authMiddleware, async (req, res) => {
   try {
     const boardId = req.params.boardId;
     const parsedData = columnCreationSchema.parse(req.body);
