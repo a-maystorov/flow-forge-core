@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
-import authMiddleware from '../middleware/authMiddleware';
+import auth from '../middleware/auth.middleware';
 import Column from '../models/column.model';
 import Task from '../models/task.model';
 import subtaskRoutes from './subtask.routes';
@@ -13,7 +13,7 @@ const taskCreationSchema = z.object({
   description: z.string().optional(),
 });
 
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 

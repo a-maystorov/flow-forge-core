@@ -1,12 +1,12 @@
 import express, { Request, Response } from 'express';
 import { z } from 'zod';
-import authMiddleware from '../middleware/authMiddleware';
+import auth from '../middleware/auth.middleware';
 import Board from '../models/board.model';
 import columnRoutes from './column.routes';
 
 const router = express.Router();
 
-router.get('/', authMiddleware, async (req: Request, res: Response) => {
+router.get('/', auth, async (req: Request, res: Response) => {
   try {
     const boards = await Board.find({ ownerId: req.userId });
     res.status(200).json(boards);
@@ -15,7 +15,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-router.get('/:boardId', authMiddleware, async (req: Request, res: Response) => {
+router.get('/:boardId', auth, async (req: Request, res: Response) => {
   try {
     const { boardId } = req.params;
     const userId = req.userId;
@@ -37,7 +37,7 @@ const boardCreationSchema = z.object({
   name: z.string().min(1, 'Board name is required'),
 });
 
-router.post('/', authMiddleware, async (req: Request, res: Response) => {
+router.post('/', auth, async (req: Request, res: Response) => {
   try {
     const parsedData = boardCreationSchema.parse(req.body);
     const { name } = parsedData;
@@ -55,7 +55,7 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
   }
 });
 
-router.put('/:boardId', authMiddleware, async (req: Request, res: Response) => {
+router.put('/:boardId', auth, async (req: Request, res: Response) => {
   try {
     const { boardId } = req.params;
     const userId = req.userId;

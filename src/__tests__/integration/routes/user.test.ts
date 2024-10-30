@@ -1,8 +1,8 @@
 import bcrypt from 'bcrypt';
 import request from 'supertest';
-import app from '../../app';
-import { connectDB, disconnectDB } from '../../config/database';
-import User from '../../models/user.model';
+import app from '../../../app';
+import { connectDB, disconnectDB } from '../../../config/database';
+import User from '../../../models/user.model';
 
 beforeAll(async () => {
   process.env.NODE_ENV = 'test';

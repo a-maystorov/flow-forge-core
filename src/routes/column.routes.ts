@@ -1,6 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
-import authMiddleware from '../middleware/authMiddleware';
+import auth from '../middleware/auth.middleware';
 import Board from '../models/board.model';
 import Column from '../models/column.model';
 import taskRoutes from './task.routes';
@@ -11,7 +11,7 @@ const columnCreationSchema = z.object({
   name: z.string().min(1, 'Column name is required'),
 });
 
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const boardId = req.params.boardId;
     const parsedData = columnCreationSchema.parse(req.body);
@@ -37,7 +37,7 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-router.put('/:columnId', authMiddleware, async (req, res) => {
+router.put('/:columnId', auth, async (req, res) => {
   try {
     const { columnId } = req.params;
     const parsedData = columnCreationSchema.parse(req.body);
@@ -64,7 +64,7 @@ router.put('/:columnId', authMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:columnId', authMiddleware, async (req, res) => {
+router.delete('/:columnId', auth, async (req, res) => {
   try {
     const { columnId } = req.params;
 

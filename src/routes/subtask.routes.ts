@@ -1,6 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
-import authMiddleware from '../middleware/authMiddleware';
+import auth from '../middleware/auth.middleware';
 import Subtask from '../models/subtask.model';
 import Task from '../models/task.model';
 
@@ -10,7 +10,7 @@ const subtaskCreationSchema = z.object({
   name: z.string().min(1, 'Subtask name is required'),
 });
 
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const parsedData = subtaskCreationSchema.parse(req.body);
     const { name } = parsedData;
@@ -40,7 +40,7 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-router.patch('/:subtaskId', authMiddleware, async (req, res) => {
+router.patch('/:subtaskId', auth, async (req, res) => {
   try {
     const { subtaskId } = req.params;
     const { name, completed } = req.body;
@@ -61,7 +61,7 @@ router.patch('/:subtaskId', authMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:subtaskId', authMiddleware, async (req, res) => {
+router.delete('/:subtaskId', auth, async (req, res) => {
   try {
     const { subtaskId, taskId } = req.params;
 
