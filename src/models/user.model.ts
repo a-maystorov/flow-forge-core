@@ -7,7 +7,7 @@ dotenv.config();
 export interface IUser extends Document {
   username: string;
   email: string;
-  passwordHash: string;
+  password: string;
 }
 
 interface IUserMethods {
@@ -19,7 +19,7 @@ type UserModel = Model<IUser, object, IUserMethods>;
 const UserSchema: Schema = new Schema<IUser, UserModel, IUserMethods>({
   username: { type: String, required: true, unique: true },
   email: { type: String, required: true, unique: true },
-  passwordHash: { type: String, required: true },
+  password: { type: String, required: true },
 });
 
 UserSchema.method('generateAuthToken', function generateAuthToken() {
