@@ -84,6 +84,33 @@ router.put('/:boardId', auth, async (req: Request, res: Response) => {
   }
 });
 
+router.delete('/:boardId', auth, async (req, res) => {
+  try {
+    const { boardId } = req.params;
+    const userId = req.userId;
+
+    const board = await Board.findById(boardId);
+
+    if (!board) {
+      res.status(404).json({ message: 'Board not found' });
+      return;
+    }
+
+    if (board.ownerId.toString() !== userId) {
+      res
+        .status(403)
+        .json({ message: 'You do not have permission to delete this board' });
+      return;
+    }
+
+    await board.deleteOne();
+
+    res.status(200).json({ message: 'Board deleted successfully', board });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 router.use('/:boardId/columns', columnRoutes);
 
 export default router;
