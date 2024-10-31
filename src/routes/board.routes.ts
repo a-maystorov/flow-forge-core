@@ -60,21 +60,27 @@ router.put('/:boardId', auth, async (req: Request, res: Response) => {
     const { boardId } = req.params;
     const userId = req.userId;
 
-    const parsedData = boardCreationSchema.parse(req.body);
-    const { name } = parsedData;
-
-    const board = await Board.findOneAndUpdate(
-      { _id: boardId, ownerId: userId },
-      { name },
-      { new: true }
-    );
+    const board = await Board.findById(boardId);
 
     if (!board) {
       res.status(404).json({ message: 'Board not found' });
       return;
     }
 
-    res.status(200).json(board);
+    if (board.ownerId.toString() !== userId) {
+      res
+        .status(403)
+        .json({ message: 'You do not have permission to edit this board' });
+      return;
+    }
+
+    const parsedData = boardCreationSchema.parse(req.body);
+    const { name } = parsedData;
+
+    board.name = name;
+    await board.save();
+
+    res.status(200).json({ message: 'Board updated successfully', board });
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ errors: error.errors });
