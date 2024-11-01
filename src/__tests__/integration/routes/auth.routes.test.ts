@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import request from 'supertest';
 import app from '../../../app';
 import { connectDB, disconnectDB } from '../../../config/database';
-import User, { IUser } from '../../../models/user.model';
+import User from '../../../models/user.model';
 
 describe('/api/auth', () => {
   beforeAll(async () => {
@@ -14,7 +14,7 @@ describe('/api/auth', () => {
   });
 
   describe('POST /login', () => {
-    let user: IUser;
+    let user: InstanceType<typeof User>;
     let email: string;
     let password: string;
 

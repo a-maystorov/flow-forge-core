@@ -1,10 +1,10 @@
 import dotenv from 'dotenv';
 import { sign } from 'jsonwebtoken';
-import mongoose, { Document, Model, Schema } from 'mongoose';
+import mongoose, { Model, Schema } from 'mongoose';
 
 dotenv.config();
 
-export interface IUser extends Document {
+export interface IUser {
   username: string;
   email: string;
   password: string;

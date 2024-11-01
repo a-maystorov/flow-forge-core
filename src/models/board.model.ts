@@ -1,6 +1,6 @@
-import mongoose, { Document, Schema, Types } from 'mongoose';
+import mongoose, { Schema, Types } from 'mongoose';
 
-export interface IBoard extends Document {
+export interface IBoard {
   name: string;
   ownerId: Types.ObjectId;
   columns: Types.ObjectId[];
