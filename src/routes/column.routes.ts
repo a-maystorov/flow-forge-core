@@ -16,9 +16,6 @@ const columnCreationSchema = z.object({
 });
 
 router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const boardId = req.params.boardId;
     const userId = req.userId;
@@ -26,10 +23,9 @@ router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
     const board = await Board.findOne({
       _id: boardId,
       ownerId: userId,
-    }).session(session);
+    });
 
     if (!board) {
-      await session.abortTransaction();
       res.status(404).json({ message: 'Board not found' });
       return;
     }
@@ -38,27 +34,17 @@ router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
     const { name } = parsedData;
 
     const column = new Column({ name, boardId });
-    await column.save({ session });
+    await column.save();
 
-    await Board.updateOne(
-      { _id: boardId },
-      { $push: { columns: column._id } },
-      { session }
-    );
-
-    await session.commitTransaction();
+    await Board.updateOne({ _id: boardId }, { $push: { columns: column._id } });
 
     res.status(201).json(column);
   } catch (error) {
-    await session.abortTransaction();
-
     if (error instanceof z.ZodError) {
       res.status(400).json({ errors: error.errors });
     } else {
       res.status(500).json({ error: (error as Error).message });
     }
-  } finally {
-    session.endSession();
   }
 });
 
