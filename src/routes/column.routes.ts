@@ -1,5 +1,4 @@
 import express from 'express';
-import mongoose from 'mongoose';
 import { z } from 'zod';
 import auth from '../middleware/auth.middleware';
 import validateObjectId from '../middleware/validateObjectId.middleware';
@@ -85,40 +84,23 @@ router.delete(
   validateObjectId('columnId'),
   auth,
   async (req, res) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     try {
       const { columnId, boardId } = req.params;
 
-      const column = await Column.findOne({ _id: columnId, boardId }).session(
-        session
-      );
+      const column = await Column.findOne({ _id: columnId, boardId });
 
       if (!column) {
-        await session.abortTransaction();
-
         res.status(404).json({ message: 'Column not found' });
         return;
       }
 
-      await column.deleteOne({ session });
+      await column.deleteOne();
 
-      await Board.updateOne(
-        { _id: boardId },
-        { $pull: { columns: columnId } },
-        { session }
-      );
-
-      await session.commitTransaction();
+      await Board.updateOne({ _id: boardId }, { $pull: { columns: columnId } });
 
       res.status(200).json(column);
     } catch (error) {
-      await session.abortTransaction();
-
       res.status(500).json({ error: (error as Error).message });
-    } finally {
-      session.endSession();
     }
   }
 );

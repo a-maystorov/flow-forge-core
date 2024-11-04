@@ -106,4 +106,120 @@ describe('/api/boards/:boardId/columns', () => {
       expect(res.body).toHaveProperty('boardId', boardId.toString());
     });
   });
+
+  describe('PUT /:columnId', () => {
+    let columnId: string | Types.ObjectId;
+
+    beforeEach(async () => {
+      await createUserAndToken();
+      await createBoard('Test Board');
+      const column = new Column({ name: 'Initial Column', boardId });
+      await column.save();
+      columnId = column._id;
+    });
+
+    const execPut = (newName: string) => {
+      return request(app)
+        .put(`/api/boards/${boardId}/columns/${columnId}`)
+        .set('x-auth-token', token)
+        .send({ name: newName });
+    };
+
+    it('should return 401 if user is not authenticated', async () => {
+      token = '';
+
+      const res = await execPut('Updated Column');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 404 if column is not found', async () => {
+      columnId = new mongoose.Types.ObjectId();
+
+      const res = await execPut('Updated Column');
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 400 if column name is invalid', async () => {
+      const res = await execPut('');
+
+      expect(res.status).toBe(400);
+      expect(res.body.errors[0].message).toMatch(/Column name is required/);
+    });
+
+    it('should update the column if input is valid', async () => {
+      const res = await execPut('Updated Column');
+
+      const columnInDB = await Column.findById(columnId);
+
+      expect(res.status).toBe(200);
+      expect(columnInDB!.name).toBe('Updated Column');
+    });
+
+    it('should return the updated column if input is valid', async () => {
+      const res = await execPut('Updated Column');
+
+      expect(res.body).toHaveProperty('_id', columnId.toString());
+      expect(res.body).toHaveProperty('name', 'Updated Column');
+    });
+  });
+
+  describe('DELETE /:columnId', () => {
+    let columnId: string | Types.ObjectId;
+
+    beforeEach(async () => {
+      await createUserAndToken();
+      await createBoard('Test Board');
+      const column = new Column({ name: 'Column to delete', boardId });
+      await column.save();
+      columnId = column._id;
+    });
+
+    const execDelete = () => {
+      return request(app)
+        .delete(`/api/boards/${boardId}/columns/${columnId}`)
+        .set('x-auth-token', token);
+    };
+
+    it('should return 401 if user is not authenticated', async () => {
+      token = '';
+
+      const res = await execDelete();
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 404 if column is not found', async () => {
+      columnId = new mongoose.Types.ObjectId();
+
+      const res = await execDelete();
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should delete the column if it exists', async () => {
+      const res = await execDelete();
+
+      const columnInDB = await Column.findById(columnId);
+
+      expect(res.status).toBe(200);
+      expect(columnInDB).toBeNull();
+    });
+
+    it('should remove the column ID from the board’s columns array', async () => {
+      await execDelete();
+
+      const boardInDB = await Board.findById(boardId);
+
+      expect(boardInDB!.columns).not.toContainEqual(columnId);
+    });
+
+    it('should return the deleted column', async () => {
+      const res = await execDelete();
+
+      expect(res.body).toHaveProperty('_id', columnId.toString());
+      expect(res.body).toHaveProperty('name', 'Column to delete');
+    });
+  });
 });
