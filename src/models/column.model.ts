@@ -1,9 +1,9 @@
 import mongoose, { Document, Schema, Types } from 'mongoose';
 
-export interface IColumn extends Document {
+export interface IColumn {
   name: string;
   boardId: Types.ObjectId;
-  taskIds: Types.ObjectId[];
+  tasks: Types.ObjectId[];
 }
 
 const ColumnSchema: Schema = new Schema({

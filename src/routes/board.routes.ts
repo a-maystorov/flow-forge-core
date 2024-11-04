@@ -9,7 +9,10 @@ const router = express.Router();
 
 router.get('/', auth, async (req: Request, res: Response) => {
   try {
-    const boards = await Board.find({ ownerId: req.userId });
+    const boards = await Board.find({ ownerId: req.userId }).populate({
+      path: 'columns',
+    });
+
     res.status(200).json(boards);
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
@@ -25,7 +28,12 @@ router.get(
       const { boardId } = req.params;
       const userId = req.userId;
 
-      const board = await Board.findOne({ _id: boardId, ownerId: userId });
+      const board = await Board.findOne({
+        _id: boardId,
+        ownerId: userId,
+      }).populate({
+        path: 'columns',
+      });
 
       if (!board) {
         res.status(404).json({ message: 'Board not found' });
