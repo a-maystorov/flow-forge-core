@@ -2,8 +2,8 @@ import mongoose, { Schema, Types } from 'mongoose';
 
 export interface IBoard {
   name: string;
-  ownerId: Types.ObjectId;
   columns: Types.ObjectId[];
+  ownerId: Types.ObjectId;
 }
 
 const BoardSchema: Schema = new Schema({

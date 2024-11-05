@@ -2,8 +2,8 @@ import mongoose, { Schema, Types } from 'mongoose';
 
 export interface IColumn {
   name: string;
-  boardId: Types.ObjectId;
   tasks: Types.ObjectId[];
+  boardId: Types.ObjectId;
 }
 
 const ColumnSchema: Schema = new Schema({
@@ -13,7 +13,7 @@ const ColumnSchema: Schema = new Schema({
     ref: 'Board',
     required: true,
   },
-  taskIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
+  tasks: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Task' }],
 });
 
 const Column = mongoose.model<IColumn>('Column', ColumnSchema);
