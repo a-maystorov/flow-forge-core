@@ -1,13 +1,21 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import mongoose, { Schema, Types } from 'mongoose';
 
-export interface ISubtask extends Document {
-  name: string;
+export interface ISubtask {
+  title: string;
+  description?: string;
   completed: boolean;
+  taskId: Types.ObjectId;
 }
 
 const SubtaskSchema: Schema = new Schema({
-  name: { type: String, required: true },
+  title: { type: String, required: true },
+  description: { type: String },
   completed: { type: Boolean, default: false },
+  taskId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Column',
+    required: true,
+  },
 });
 
 const Subtask = mongoose.model<ISubtask>('Subtask', SubtaskSchema);

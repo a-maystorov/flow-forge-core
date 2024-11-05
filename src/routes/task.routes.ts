@@ -77,9 +77,9 @@ router.delete(
   validateObjectId('taskId'),
   auth,
   async (req, res) => {
-    const { taskId, columnId } = req.params;
-
     try {
+      const { taskId, columnId } = req.params;
+
       const task = await Task.findOne({ _id: taskId, columnId });
 
       if (!task) {
