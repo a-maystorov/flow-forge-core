@@ -63,6 +63,14 @@ describe('/api/boards/:boardId/columns', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should return 404 if invalid board id is passed', async () => {
+      boardId = '1';
+
+      const res = await execPost('New Column');
+
+      expect(res.status).toBe(404);
+    });
+
     it('should return 404 if board is not found', async () => {
       boardId = new mongoose.Types.ObjectId();
 
@@ -133,6 +141,14 @@ describe('/api/boards/:boardId/columns', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should return 404 if invalid board id is passed', async () => {
+      boardId = '1';
+
+      const res = await execPut('Updated Column');
+
+      expect(res.status).toBe(404);
+    });
+
     it('should return 404 if column is not found', async () => {
       columnId = new mongoose.Types.ObjectId();
 
@@ -188,6 +204,14 @@ describe('/api/boards/:boardId/columns', () => {
       const res = await execDelete();
 
       expect(res.status).toBe(401);
+    });
+
+    it('should return 404 if invalid board id is passed', async () => {
+      boardId = '1';
+
+      const res = await execDelete();
+
+      expect(res.status).toBe(404);
     });
 
     it('should return 404 if column is not found', async () => {

@@ -70,6 +70,14 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should return 404 if invalid column id is passed', async () => {
+      columnId = '1';
+
+      const res = await execPost('New Task');
+
+      expect(res.status).toBe(404);
+    });
+
     it('should return 404 if column is not found', async () => {
       columnId = new mongoose.Types.ObjectId();
 
@@ -142,6 +150,14 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       expect(res.status).toBe(401);
     });
 
+    it('should return 404 if invalid column id is passed', async () => {
+      columnId = '1';
+
+      const res = await execPut('Updated Task');
+
+      expect(res.status).toBe(404);
+    });
+
     it('should return 404 if task is not found', async () => {
       taskId = new mongoose.Types.ObjectId();
 
@@ -200,6 +216,14 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       const res = await execDelete();
 
       expect(res.status).toBe(401);
+    });
+
+    it('should return 404 if invalid column id is passed', async () => {
+      columnId = '1';
+
+      const res = await execDelete();
+
+      expect(res.status).toBe(404);
     });
 
     it('should return 404 if task is not found', async () => {
