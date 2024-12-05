@@ -46,3 +46,9 @@ docker-compose.override.yml
 # Temporary files
 *.tmp
 *.temp
+
+# MongoDB binaries (added to ignore binaries created by mongodb-memory-server)
+mongodb-binaries/
+
+# Windows-specific (optional)
+desktop.ini
