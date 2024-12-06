@@ -21,7 +21,7 @@ dist/
 .DS_Store
 Thumbs.db
 
-# IDE-specific files (optional, based on what you use)
+# IDE-specific files
 .vscode/
 .idea/
 
@@ -33,10 +33,10 @@ npm_modules/
 yarn.lock
 package-lock.json
 
-# Optional: Docker related files
+# Docker related files
 docker-compose.override.yml
 
-# Optional: ESLint and Prettier cache
+# ESLint and Prettier cache
 .eslintcache
 
 # MacOS-specific
@@ -50,5 +50,5 @@ docker-compose.override.yml
 # MongoDB binaries (added to ignore binaries created by mongodb-memory-server)
 mongodb-binaries/
 
-# Windows-specific (optional)
+# Windows-specific
 desktop.ini
