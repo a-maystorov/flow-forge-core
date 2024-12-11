@@ -11,6 +11,7 @@ const corsOptions: CorsOptions = {
     }
   },
   credentials: true,
+  exposedHeaders: ['x-auth-token'],
 };
 
 export default cors(corsOptions);
