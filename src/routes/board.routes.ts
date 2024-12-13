@@ -56,6 +56,16 @@ router.post('/', auth, async (req: Request, res: Response) => {
     const parsedData = boardCreationSchema.parse(req.body);
     const { name } = parsedData;
 
+    if (req.isGuest) {
+      const existingBoard = await Board.findOne({ ownerId: req.userId });
+
+      if (existingBoard) {
+        res.status(403).json({
+          message: 'Guest users are limited to creating only one board.',
+        });
+      }
+    }
+
     const board = new Board({ name, ownerId: req.userId });
     await board.save();
 

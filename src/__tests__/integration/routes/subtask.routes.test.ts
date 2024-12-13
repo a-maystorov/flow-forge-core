@@ -75,14 +75,6 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
         .send({ title, description, completed });
     };
 
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await execPost('New Subtask');
-
-      expect(res.status).toBe(401);
-    });
-
     it('should return 404 if invalid task id is passed', async () => {
       taskId = '1';
 
@@ -161,14 +153,6 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
         .send({ title: newTitle, description: newDescription, completed });
     };
 
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await execPut('Updated Subtask');
-
-      expect(res.status).toBe(401);
-    });
-
     it('should return 404 if invalid task id is passed', async () => {
       taskId = '1';
 
@@ -240,14 +224,6 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
         )
         .set('x-auth-token', token);
     };
-
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await execDelete();
-
-      expect(res.status).toBe(401);
-    });
 
     it('should return 404 if invalid task id is passed', async () => {
       taskId = '1';

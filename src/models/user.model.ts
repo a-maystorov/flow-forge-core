@@ -5,9 +5,10 @@ import mongoose, { Model, Schema } from 'mongoose';
 dotenv.config();
 
 export interface IUser {
-  username: string;
-  email: string;
-  password: string;
+  username?: string;
+  email?: string;
+  password?: string;
+  isGuest: boolean;
 }
 
 interface IUserMethods {
@@ -16,10 +17,23 @@ interface IUserMethods {
 
 type UserModel = Model<IUser, object, IUserMethods>;
 
-const UserSchema: Schema = new Schema<IUser, UserModel, IUserMethods>({
-  username: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+function generateGuestUsername() {
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `Guest${randomSuffix}`;
+}
+
+const UserSchema: Schema<IUser, UserModel, IUserMethods> = new Schema({
+  username: { type: String },
+  email: { type: String, unique: true, sparse: true },
+  password: { type: String },
+  isGuest: { type: Boolean, default: false },
+});
+
+UserSchema.pre('save', function (next) {
+  if (this.isGuest && !this.username) {
+    this.username = generateGuestUsername();
+  }
+  next();
 });
 
 UserSchema.method('generateAuthToken', function generateAuthToken() {
@@ -27,9 +41,10 @@ UserSchema.method('generateAuthToken', function generateAuthToken() {
     {
       _id: this._id,
       username: this.username,
-      email: this.email,
+      isGuest: this.isGuest,
     },
-    process.env.JWT_SECRET as string
+    process.env.JWT_SECRET as string,
+    { expiresIn: '1h' }
   );
 
   return token;

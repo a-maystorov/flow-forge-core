@@ -44,16 +44,6 @@ describe('/api/boards', () => {
       await createUserAndToken();
     });
 
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await request(app)
-        .get('/api/boards')
-        .set('x-auth-token', token);
-
-      expect(res.status).toBe(401);
-    });
-
     it('should return all boards for the logged-in user', async () => {
       await Board.collection.insertMany([
         { name: 'board1', ownerId: user._id },
@@ -78,16 +68,6 @@ describe('/api/boards', () => {
     beforeEach(async () => {
       await createUserAndToken();
       await createBoard('board1');
-    });
-
-    it('should return 401 if the user is not authenticated', async () => {
-      token = '';
-
-      const res = await request(app)
-        .get(`/api/boards/${boardId}`)
-        .set('x-auth-token', token);
-
-      expect(res.status).toBe(401);
     });
 
     it('should return 404 if no board with the given id exists', async () => {
@@ -123,17 +103,6 @@ describe('/api/boards', () => {
   describe('POST /', () => {
     beforeEach(async () => {
       await createUserAndToken();
-    });
-
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await request(app)
-        .post('/api/boards')
-        .set('x-auth-token', token)
-        .send({ name: 'board1' });
-
-      expect(res.status).toBe(401);
     });
 
     it('should return 400 if board name is less than 1 character', async () => {
@@ -186,14 +155,6 @@ describe('/api/boards', () => {
         .send({ name: newName });
     };
 
-    it('should return 401 if the user is not authenticated', async () => {
-      token = '';
-
-      const res = await execPut();
-
-      expect(res.status).toBe(401);
-    });
-
     it('should return 404 if the board is not found', async () => {
       boardId = new mongoose.Types.ObjectId();
 
@@ -230,14 +191,6 @@ describe('/api/boards', () => {
         .delete(`/api/boards/${boardId}`)
         .set('x-auth-token', token);
     };
-
-    it('should return 401 if the user is not authenticated', async () => {
-      token = '';
-
-      const res = await execDelete();
-
-      expect(res.status).toBe(401);
-    });
 
     it('should return 404 if the board does not exist', async () => {
       boardId = new mongoose.Types.ObjectId();

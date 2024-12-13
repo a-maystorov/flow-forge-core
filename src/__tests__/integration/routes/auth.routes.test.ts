@@ -29,7 +29,10 @@ describe('/api/auth', () => {
       user = new User({ username: 'name1', email, password });
 
       const salt = await bcrypt.genSalt(10);
-      user.password = await bcrypt.hash(user.password, salt);
+
+      if (user.password) {
+        user.password = await bcrypt.hash(user.password, salt);
+      }
 
       await user.save();
     });
@@ -79,7 +82,7 @@ describe('/api/auth', () => {
     it('should return true if the hashed and user password are the same', async () => {
       const validPassword = '12345678';
 
-      const auth = await bcrypt.compare(validPassword, user.password);
+      const auth = await bcrypt.compare(validPassword, user.password!);
 
       expect(auth).toEqual(true);
     });
@@ -87,7 +90,7 @@ describe('/api/auth', () => {
     it('should return false if the hashed and user password are not the same', async () => {
       const invalidPassword = 'invalid_password';
 
-      const auth = await bcrypt.compare(invalidPassword, user.password);
+      const auth = await bcrypt.compare(invalidPassword, user.password!);
 
       expect(auth).toEqual(false);
     });

@@ -55,14 +55,6 @@ describe('/api/boards/:boardId/columns', () => {
         .send({ name: columnName });
     };
 
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await execPost('New Column');
-
-      expect(res.status).toBe(401);
-    });
-
     it('should return 404 if invalid board id is passed', async () => {
       boardId = '1';
 
@@ -133,14 +125,6 @@ describe('/api/boards/:boardId/columns', () => {
         .send({ name: newName });
     };
 
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await execPut('Updated Column');
-
-      expect(res.status).toBe(401);
-    });
-
     it('should return 404 if invalid board id is passed', async () => {
       boardId = '1';
 
@@ -197,14 +181,6 @@ describe('/api/boards/:boardId/columns', () => {
         .delete(`/api/boards/${boardId}/columns/${columnId}`)
         .set('x-auth-token', token);
     };
-
-    it('should return 401 if user is not authenticated', async () => {
-      token = '';
-
-      const res = await execDelete();
-
-      expect(res.status).toBe(401);
-    });
 
     it('should return 404 if invalid board id is passed', async () => {
       boardId = '1';

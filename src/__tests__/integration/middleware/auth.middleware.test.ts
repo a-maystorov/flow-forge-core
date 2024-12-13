@@ -15,7 +15,6 @@ describe('auth middleware', () => {
   };
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
     await connectDB();
   });
 
@@ -29,27 +28,29 @@ describe('auth middleware', () => {
 
   afterEach(async () => {
     await Board.deleteMany({});
-  });
-
-  it('should return 401 if no token is provided', async () => {
-    token = '';
-
-    const res = await exe();
-
-    expect(res.status).toBe(401);
+    await User.deleteMany({});
   });
 
   it('should return 400 if token is invalid', async () => {
-    token = 'a';
+    token = 'invalid-token';
 
     const res = await exe();
 
     expect(res.status).toBe(400);
   });
 
-  it('should return 201 if token is valid', async () => {
+  it('should create a guest user if no token is provided', async () => {
+    token = '';
+
     const res = await exe();
 
+    const guestUser = await User.findOne({ isGuest: true });
+    const guestToken = res.header['x-guest-token'];
+
     expect(res.status).toBe(201);
+    expect(guestUser).not.toBeNull();
+    expect(guestUser?.username).toMatch(/^Guest\d+$/);
+    expect(guestToken).toBeDefined();
+    expect(typeof guestToken).toBe('string');
   });
 });
