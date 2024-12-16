@@ -157,9 +157,8 @@ describe('/api/boards', () => {
         expect(res.body).toHaveProperty('board');
         expect(res.body.board).toHaveProperty('name', 'guest board');
         expect(res.body).toHaveProperty('message');
-        expect(res.body.message).toContain(
-          'Guest accounts and their boards are automatically deleted after 7 days'
-        );
+        expect(res.body.message).toContain('7 days');
+        expect(res.body.message).toContain('Guest');
       });
 
       it('should prevent creating more than one board', async () => {

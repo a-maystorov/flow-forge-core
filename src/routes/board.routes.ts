@@ -74,7 +74,7 @@ router.post('/', auth, async (req: Request, res: Response) => {
       res.status(201).json({
         board,
         message:
-          'Note: Guest accounts and their boards are automatically deleted after 7 days. Create an account to keep your boards permanently.',
+          'Note: Guest session expires in 7 days. Create an account to save your boards.',
       });
     } else {
       res.status(201).json(board);
