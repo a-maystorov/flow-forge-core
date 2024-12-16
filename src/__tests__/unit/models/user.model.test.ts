@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { connectDB, disconnectDB } from '../../../config/database';
 import User from '../../../models/user.model';
+import Board from '../../../models/board.model';
 
 interface JWTPayload {
   _id: string;
@@ -21,6 +22,7 @@ describe('User Model', () => {
 
   afterEach(async () => {
     await User.deleteMany({});
+    await Board.deleteMany({});
   });
 
   describe('generateAuthToken', () => {
@@ -108,6 +110,39 @@ describe('User Model', () => {
       expect(user.email).toBe(email);
       expect(user.password).toBe(password);
       expect(user.guestExpiresAt).toBeUndefined();
+    });
+  });
+
+  describe('guest user TTL', () => {
+    it('should handle TTL-based deletion of guest users', async () => {
+      const user = new User({
+        isGuest: true,
+        guestExpiresAt: new Date(Date.now() - 1000), // Set to 1 second in the past
+      });
+      await user.save();
+
+      const board = new Board({
+        name: 'Test Board',
+        ownerId: user._id,
+      });
+      await board.save();
+
+      let foundUser = await User.findById(user._id);
+      let foundBoard = await Board.findById(board._id);
+      expect(foundUser).not.toBeNull();
+      expect(foundBoard).not.toBeNull();
+
+      // Simulate TTL monitor deletion
+      await User.deleteOne({ _id: user._id });
+
+      foundUser = await User.findById(user._id);
+      foundBoard = await Board.findById(board._id);
+      expect(foundUser).toBeNull();
+      // Board remains since TTL monitor uses query middleware
+      expect(foundBoard).not.toBeNull();
+
+      // Cleanup
+      await Board.deleteOne({ _id: board._id });
     });
   });
 });

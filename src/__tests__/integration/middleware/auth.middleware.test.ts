@@ -7,9 +7,7 @@ describe('auth middleware', () => {
   let token: string;
 
   const exe = () => {
-    return request(app)
-      .get('/api/boards') // Using GET instead of POST to test pure auth
-      .set('x-auth-token', token);
+    return request(app).get('/api/boards').set('x-auth-token', token);
   };
 
   beforeAll(async () => {
