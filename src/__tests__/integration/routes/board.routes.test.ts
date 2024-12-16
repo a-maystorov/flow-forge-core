@@ -23,12 +23,14 @@ describe('/api/boards', () => {
     await Board.deleteMany({});
   });
 
-  const createUserAndToken = async () => {
+  const createUserAndToken = async (isGuest = false) => {
     user = new User({
-      email: 'test@example.com',
-      password: 'password123',
-      username: 'testuser',
+      email: isGuest ? undefined : 'test@example.com',
+      password: isGuest ? undefined : 'password123',
+      username: isGuest ? undefined : 'testuser',
+      isGuest,
     });
+
     await user.save();
     token = user.generateAuthToken();
   };
@@ -101,41 +103,84 @@ describe('/api/boards', () => {
   });
 
   describe('POST /', () => {
-    beforeEach(async () => {
-      await createUserAndToken();
+    describe('regular user', () => {
+      beforeEach(async () => {
+        await createUserAndToken();
+      });
+
+      it('should return 400 if board name is less than 1 character', async () => {
+        const res = await request(app)
+          .post('/api/boards')
+          .set('x-auth-token', token)
+          .send({ name: '' });
+
+        expect(res.status).toBe(400);
+      });
+
+      it('should save and create the board if input is valid', async () => {
+        const res = await request(app)
+          .post('/api/boards')
+          .set('x-auth-token', token)
+          .send({ name: 'board1' });
+
+        const board = await Board.findOne({ name: 'board1' });
+
+        expect(res.status).toBe(201);
+        expect(board).not.toBeNull();
+        expect(board!.ownerId.toString()).toBe(user._id.toString());
+      });
+
+      it('should return the board if input is valid', async () => {
+        const res = await request(app)
+          .post('/api/boards')
+          .set('x-auth-token', token)
+          .send({ name: 'board1' });
+
+        expect(res.body).toHaveProperty('_id');
+        expect(res.body).toHaveProperty('name', 'board1');
+        expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
+      });
     });
 
-    it('should return 400 if board name is less than 1 character', async () => {
-      const res = await request(app)
-        .post('/api/boards')
-        .set('x-auth-token', token)
-        .send({ name: '' });
+    describe('guest user', () => {
+      beforeEach(async () => {
+        await createUserAndToken(true);
+      });
 
-      expect(res.status).toBe(400);
-    });
+      it('should allow creating first board with guest warning message', async () => {
+        const res = await request(app)
+          .post('/api/boards')
+          .set('x-auth-token', token)
+          .send({ name: 'guest board' });
 
-    it('should save and create the board if input is valid', async () => {
-      const res = await request(app)
-        .post('/api/boards')
-        .set('x-auth-token', token)
-        .send({ name: 'board1' });
+        expect(res.status).toBe(201);
+        expect(res.body).toHaveProperty('board');
+        expect(res.body.board).toHaveProperty('name', 'guest board');
+        expect(res.body).toHaveProperty('message');
+        expect(res.body.message).toContain(
+          'Guest accounts and their boards are automatically deleted after 7 days'
+        );
+      });
 
-      const board = await Board.findOne({ name: 'board1' });
+      it('should prevent creating more than one board', async () => {
+        // Create first board
+        await request(app)
+          .post('/api/boards')
+          .set('x-auth-token', token)
+          .send({ name: 'first board' });
 
-      expect(res.status).toBe(201);
-      expect(board).not.toBeNull();
-      expect(board!.ownerId.toString()).toBe(user._id.toString());
-    });
+        // Try to create second board
+        const res = await request(app)
+          .post('/api/boards')
+          .set('x-auth-token', token)
+          .send({ name: 'second board' });
 
-    it('should return the board if input is valid', async () => {
-      const res = await request(app)
-        .post('/api/boards')
-        .set('x-auth-token', token)
-        .send({ name: 'board1' });
-
-      expect(res.body).toHaveProperty('_id');
-      expect(res.body).toHaveProperty('name', 'board1');
-      expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty(
+          'message',
+          'Guest users are limited to creating only one board.'
+        );
+      });
     });
   });
 
