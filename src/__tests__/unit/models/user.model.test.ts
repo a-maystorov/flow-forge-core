@@ -1,17 +1,103 @@
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
+import { connectDB, disconnectDB } from '../../../config/database';
 import User from '../../../models/user.model';
 
-describe('user.generateAuthToken', () => {
-  it('should return a valid JWT', () => {
-    const payload = {
-      _id: new mongoose.Types.ObjectId().toHexString(),
-    };
+interface JWTPayload {
+  _id: string;
+  username?: string;
+  isGuest: boolean;
+  exp?: number;
+}
 
-    const user = new User(payload);
-    const token = user.generateAuthToken();
-    const decoded = jwt.verify(token, `${process.env.JWT_SECRET}`);
+describe('User Model', () => {
+  beforeAll(async () => {
+    await connectDB();
+  });
 
-    expect(decoded).toMatchObject(payload);
+  afterAll(async () => {
+    await disconnectDB();
+  });
+
+  afterEach(async () => {
+    await User.deleteMany({});
+  });
+
+  describe('generateAuthToken', () => {
+    it('should return a valid JWT for regular user', async () => {
+      const payload = {
+        _id: new mongoose.Types.ObjectId().toHexString(),
+        isGuest: false,
+      };
+
+      const user = new User(payload);
+      await user.save();
+      const token = user.generateAuthToken();
+      const decoded = jwt.verify(
+        token,
+        `${process.env.JWT_SECRET}`
+      ) as JWTPayload;
+
+      expect(decoded._id).toBe(payload._id);
+      expect(decoded.isGuest).toBe(false);
+      expect(decoded.exp).toBeDefined();
+    });
+
+    it('should return a valid JWT for guest user', async () => {
+      const payload = {
+        _id: new mongoose.Types.ObjectId().toHexString(),
+        isGuest: true,
+      };
+
+      const user = new User(payload);
+      await user.save();
+      const token = user.generateAuthToken();
+      const decoded = jwt.verify(
+        token,
+        `${process.env.JWT_SECRET}`
+      ) as JWTPayload;
+
+      expect(decoded._id).toBe(payload._id);
+      expect(decoded.isGuest).toBe(true);
+      expect(decoded.exp).toBeDefined();
+    });
+  });
+
+  describe('pre-save hook', () => {
+    it('should set guestExpiresAt for guest users', async () => {
+      const user = new User({ isGuest: true });
+      await user.save();
+
+      expect(user.guestExpiresAt).toBeDefined();
+      expect(user.guestExpiresAt!.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('should not set guestExpiresAt for regular users', async () => {
+      const user = new User({
+        username: 'test',
+        email: 'test@test.com',
+        password: 'password123',
+      });
+      await user.save();
+
+      expect(user.guestExpiresAt).toBeUndefined();
+    });
+  });
+
+  describe('convertToRegisteredUser', () => {
+    it('should convert guest user to regular user', async () => {
+      const user = new User({ isGuest: true });
+      await user.save();
+
+      const email = 'test@test.com';
+      const password = 'hashedPassword123';
+
+      await user.convertToRegisteredUser(email, password);
+
+      expect(user.isGuest).toBe(false);
+      expect(user.email).toBe(email);
+      expect(user.password).toBe(password);
+      expect(user.guestExpiresAt).toBeUndefined();
+    });
   });
 });

@@ -70,7 +70,15 @@ router.post('/', auth, async (req: Request, res: Response) => {
     const board = new Board({ name, ownerId: req.userId });
     await board.save();
 
-    res.status(201).json(board);
+    if (req.isGuest) {
+      res.status(201).json({
+        board,
+        message:
+          'Note: Guest accounts and their boards are automatically deleted after 7 days. Create an account to keep your boards permanently.',
+      });
+    } else {
+      res.status(201).json(board);
+    }
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ errors: error.errors });
