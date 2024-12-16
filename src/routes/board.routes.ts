@@ -63,6 +63,7 @@ router.post('/', auth, async (req: Request, res: Response) => {
         res.status(403).json({
           message: 'Guest users are limited to creating only one board.',
         });
+        return;
       }
     }
 
