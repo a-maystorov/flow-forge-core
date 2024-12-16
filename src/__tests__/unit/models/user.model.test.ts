@@ -72,6 +72,16 @@ describe('User Model', () => {
       expect(user.guestExpiresAt!.getTime()).toBeGreaterThan(Date.now());
     });
 
+    it('should generate username for guest users', async () => {
+      const user = new User({ isGuest: true });
+      await user.save();
+
+      expect(user.username).toBeDefined();
+      // Username format should be [Adjective][Noun][Number]
+      // where number is between 100-999
+      expect(user.username).toMatch(/^[A-Z][a-z]+[A-Z][a-z]+[1-9]\d{2}$/);
+    });
+
     it('should not set guestExpiresAt for regular users', async () => {
       const user = new User({
         username: 'test',
