@@ -32,6 +32,16 @@ router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
     const parsedData = columnCreationSchema.parse(req.body);
     const { name } = parsedData;
 
+    if (req.isGuest) {
+      const existingColumns = await Column.find({ boardId });
+      if (existingColumns.length >= 3) {
+        res.status(403).json({
+          message: 'Guest users are limited to creating only three columns.',
+        });
+        return;
+      }
+    }
+
     const column = new Column({ name, boardId });
     await column.save();
 

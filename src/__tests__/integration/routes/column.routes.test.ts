@@ -25,11 +25,12 @@ describe('/api/boards/:boardId/columns', () => {
     await Column.deleteMany({});
   });
 
-  const createUserAndToken = async () => {
+  const createUserAndToken = async (isGuest = false) => {
     user = new User({
-      email: 'test@example.com',
-      password: 'password123',
-      username: 'testuser',
+      email: isGuest ? undefined : 'test@example.com',
+      password: isGuest ? undefined : 'password123',
+      username: isGuest ? undefined : 'testuser',
+      isGuest,
     });
 
     await user.save();
@@ -104,6 +105,38 @@ describe('/api/boards/:boardId/columns', () => {
       expect(res.body).toHaveProperty('_id');
       expect(res.body).toHaveProperty('name', 'New Column');
       expect(res.body).toHaveProperty('boardId', boardId.toString());
+    });
+
+    describe('guest user', () => {
+      beforeEach(async () => {
+        await createUserAndToken(true);
+        await createBoard('Test Board');
+      });
+
+      it('should allow creating up to three columns', async () => {
+        let res = await execPost('Column 1');
+        expect(res.status).toBe(201);
+
+        res = await execPost('Column 2');
+        expect(res.status).toBe(201);
+
+        res = await execPost('Column 3');
+        expect(res.status).toBe(201);
+      });
+
+      it('should prevent creating more than three columns', async () => {
+        await execPost('Column 1');
+        await execPost('Column 2');
+        await execPost('Column 3');
+
+        const res = await execPost('Column 4');
+
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty(
+          'message',
+          'Guest users are limited to creating only three columns.'
+        );
+      });
     });
   });
 
