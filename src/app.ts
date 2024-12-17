@@ -1,10 +1,11 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import corsMiddleware from './config/cors';
 import { connectDB } from './config/database';
+import { errorHandler } from './middleware';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
 import userRoutes from './routes/user.routes';
-import corsMiddleware from './config/cors';
 
 dotenv.config();
 
@@ -29,6 +30,8 @@ app.get('/', (req, res) => {
 app.get('/api', (req, res) => {
   res.json({ message: 'CORS is working!' });
 });
+
+app.use(errorHandler);
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {

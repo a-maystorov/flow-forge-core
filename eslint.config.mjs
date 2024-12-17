@@ -24,6 +24,15 @@ export default [
       ...tseslint.configs.recommended.rules,
       ...prettierConfig.rules,
 
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+
       // Ensures Prettier formatting issues are reported by ESLint
       'prettier/prettier': [
         'error',

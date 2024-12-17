@@ -1,32 +1,35 @@
 import express from 'express';
 import { z } from 'zod';
-import auth from '../middleware/auth.middleware';
+import { auth, validateObjectId } from '../middleware';
 import Column from '../models/column.model';
 import Task from '../models/task.model';
+import { asyncHandler } from '../utils/asyncHandler';
+import { NotFoundError } from '../utils/errors';
 import subtaskRoutes from './subtask.routes';
-import validateObjectId from '../middleware/validateObjectId.middleware';
 
 const router = express.Router({ mergeParams: true });
 
 router.use(validateObjectId('columnId'));
 
-const taskCreationSchema = z.object({
+const taskSchema = z.object({
   title: z.string().min(1, 'Task title is required'),
   description: z.string().optional(),
+  status: z.enum(['TODO', 'IN_PROGRESS', 'DONE']).optional(),
+  dueDate: z.string().optional(),
 });
 
-router.post('/', auth, async (req, res) => {
-  try {
+router.post(
+  '/',
+  auth,
+  asyncHandler(async (req, res) => {
     const { columnId } = req.params;
 
     const column = await Column.findById(columnId);
-
     if (!column) {
-      res.status(404).json({ message: 'Column not found' });
-      return;
+      throw new NotFoundError('Column not found');
     }
 
-    const parsedData = taskCreationSchema.parse(req.body);
+    const parsedData = taskSchema.parse(req.body);
     const { title, description } = parsedData;
 
     const task = new Task({ title, description, columnId });
@@ -35,27 +38,23 @@ router.post('/', auth, async (req, res) => {
     await Column.updateOne({ _id: columnId }, { $push: { tasks: task._id } });
 
     res.status(201).json(task);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ errors: error.errors });
-    } else {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-});
+  })
+);
 
-router.put('/:taskId', validateObjectId('taskId'), auth, async (req, res) => {
-  try {
+router.put(
+  '/:taskId',
+  validateObjectId('taskId'),
+  auth,
+  asyncHandler(async (req, res) => {
     const { taskId, columnId } = req.params;
 
     const task = await Task.findOne({ _id: taskId, columnId });
 
     if (!task) {
-      res.status(404).json({ message: 'Task not found' });
-      return;
+      throw new NotFoundError('Task not found');
     }
 
-    const parsedData = taskCreationSchema.parse(req.body);
+    const parsedData = taskSchema.parse(req.body);
     const { title, description } = parsedData;
 
     task.title = title;
@@ -63,39 +62,28 @@ router.put('/:taskId', validateObjectId('taskId'), auth, async (req, res) => {
     await task.save();
 
     res.status(200).json(task);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ errors: error.errors });
-    } else {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-});
+  })
+);
 
 router.delete(
   '/:taskId',
   validateObjectId('taskId'),
   auth,
-  async (req, res) => {
-    try {
-      const { taskId, columnId } = req.params;
+  asyncHandler(async (req, res) => {
+    const { taskId, columnId } = req.params;
 
-      const task = await Task.findOne({ _id: taskId, columnId });
+    const task = await Task.findOne({ _id: taskId, columnId });
 
-      if (!task) {
-        res.status(404).json({ message: 'Task not found' });
-        return;
-      }
-
-      await task.deleteOne();
-
-      await Column.updateOne({ _id: columnId }, { $pull: { tasks: taskId } });
-
-      res.status(200).json(task);
-    } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+    if (!task) {
+      throw new NotFoundError('Task not found');
     }
-  }
+
+    await task.deleteOne();
+
+    await Column.updateOne({ _id: columnId }, { $pull: { tasks: taskId } });
+
+    res.status(200).json(task);
+  })
 );
 
 router.use('/:taskId/subtasks', subtaskRoutes);

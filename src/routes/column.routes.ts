@@ -1,9 +1,10 @@
 import express from 'express';
 import { z } from 'zod';
-import auth from '../middleware/auth.middleware';
-import validateObjectId from '../middleware/validateObjectId.middleware';
+import { auth, validateObjectId } from '../middleware';
 import Board from '../models/board.model';
 import Column from '../models/column.model';
+import { asyncHandler } from '../utils/asyncHandler';
+import { ForbiddenError, NotFoundError } from '../utils/errors';
 import taskRoutes from './task.routes';
 
 const router = express.Router({ mergeParams: true });
@@ -14,8 +15,10 @@ const columnCreationSchema = z.object({
   name: z.string().min(1, 'Column name is required'),
 });
 
-router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
-  try {
+router.post(
+  '/',
+  auth,
+  asyncHandler(async (req, res) => {
     const boardId = req.params.boardId;
     const userId = req.userId;
 
@@ -25,8 +28,7 @@ router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
     });
 
     if (!board) {
-      res.status(404).json({ message: 'Board not found' });
-      return;
+      throw new NotFoundError('Board not found');
     }
 
     const parsedData = columnCreationSchema.parse(req.body);
@@ -35,10 +37,9 @@ router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
     if (req.isGuest) {
       const existingColumns = await Column.find({ boardId });
       if (existingColumns.length >= 3) {
-        res.status(403).json({
-          message: 'Guest users are limited to creating only three columns.',
-        });
-        return;
+        throw new ForbiddenError(
+          'Guest users are limited to creating only three columns.'
+        );
       }
     }
 
@@ -48,71 +49,51 @@ router.post('/', validateObjectId('boardId'), auth, async (req, res) => {
     await Board.updateOne({ _id: boardId }, { $push: { columns: column._id } });
 
     res.status(201).json(column);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ errors: error.errors });
-    } else {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-});
+  })
+);
 
 router.put(
   '/:columnId',
   validateObjectId('columnId'),
   auth,
-  async (req, res) => {
-    try {
-      const { columnId, boardId } = req.params;
+  asyncHandler(async (req, res) => {
+    const { columnId, boardId } = req.params;
 
-      const column = await Column.findOne({ _id: columnId, boardId });
+    const column = await Column.findOne({ _id: columnId, boardId });
 
-      if (!column) {
-        res.status(404).json({ message: 'Column not found' });
-        return;
-      }
-
-      const parsedData = columnCreationSchema.parse(req.body);
-      const { name } = parsedData;
-
-      column.name = name;
-      await column.save();
-
-      res.status(200).json(column);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ errors: error.errors });
-      } else {
-        res.status(500).json({ error: (error as Error).message });
-      }
+    if (!column) {
+      throw new NotFoundError('Column not found');
     }
-  }
+
+    const parsedData = columnCreationSchema.parse(req.body);
+    const { name } = parsedData;
+
+    column.name = name;
+    await column.save();
+
+    res.status(200).json(column);
+  })
 );
 
 router.delete(
   '/:columnId',
   validateObjectId('columnId'),
   auth,
-  async (req, res) => {
-    try {
-      const { columnId, boardId } = req.params;
+  asyncHandler(async (req, res) => {
+    const { columnId, boardId } = req.params;
 
-      const column = await Column.findOne({ _id: columnId, boardId });
+    const column = await Column.findOne({ _id: columnId, boardId });
 
-      if (!column) {
-        res.status(404).json({ message: 'Column not found' });
-        return;
-      }
-
-      await column.deleteOne();
-
-      await Board.updateOne({ _id: boardId }, { $pull: { columns: columnId } });
-
-      res.status(200).json(column);
-    } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+    if (!column) {
+      throw new NotFoundError('Column not found');
     }
-  }
+
+    await column.deleteOne();
+
+    await Board.updateOne({ _id: boardId }, { $pull: { columns: columnId } });
+
+    res.status(200).json(column);
+  })
 );
 
 router.use('/:columnId/tasks', taskRoutes);

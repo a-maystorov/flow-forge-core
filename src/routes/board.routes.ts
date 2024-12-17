@@ -1,26 +1,29 @@
 import express from 'express';
 import { z } from 'zod';
-import auth from '../middleware/auth.middleware';
-import validateObjectId from '../middleware/validateObjectId.middleware';
+import { auth, validateObjectId } from '../middleware';
 import Board from '../models/board.model';
+import { asyncHandler } from '../utils/asyncHandler';
+import { ForbiddenError, NotFoundError } from '../utils/errors';
 import columnRoutes from './column.routes';
 
 const router = express.Router();
 
-router.get('/', auth, async (req, res) => {
-  try {
+router.get(
+  '/',
+  auth,
+  asyncHandler(async (req, res) => {
     const boards = await Board.find({ ownerId: req.userId }).populate({
       path: 'columns',
     });
-
     res.status(200).json(boards);
-  } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
+  })
+);
 
-router.get('/:boardId', auth, validateObjectId('boardId'), async (req, res) => {
-  try {
+router.get(
+  '/:boardId',
+  auth,
+  validateObjectId('boardId'),
+  asyncHandler(async (req, res) => {
     const { boardId } = req.params;
     const userId = req.userId;
 
@@ -32,22 +35,21 @@ router.get('/:boardId', auth, validateObjectId('boardId'), async (req, res) => {
     });
 
     if (!board) {
-      res.status(404).json({ message: 'Board not found' });
-      return;
+      throw new NotFoundError('Board not found');
     }
 
     res.status(200).json(board);
-  } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
+  })
+);
 
 const boardCreationSchema = z.object({
   name: z.string().min(1, 'Board name is required'),
 });
 
-router.post('/', auth, async (req, res) => {
-  try {
+router.post(
+  '/',
+  auth,
+  asyncHandler(async (req, res) => {
     const parsedData = boardCreationSchema.parse(req.body);
     const { name } = parsedData;
 
@@ -55,10 +57,9 @@ router.post('/', auth, async (req, res) => {
       const existingBoard = await Board.findOne({ ownerId: req.userId });
 
       if (existingBoard) {
-        res.status(403).json({
-          message: 'Guest users are limited to creating only one board.',
-        });
-        return;
+        throw new ForbiddenError(
+          'Guest users are limited to creating only one board.'
+        );
       }
     }
 
@@ -66,25 +67,21 @@ router.post('/', auth, async (req, res) => {
     await board.save();
 
     res.status(201).json(board);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ errors: error.errors });
-    } else {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-});
+  })
+);
 
-router.put('/:boardId', auth, validateObjectId('boardId'), async (req, res) => {
-  try {
+router.put(
+  '/:boardId',
+  auth,
+  validateObjectId('boardId'),
+  asyncHandler(async (req, res) => {
     const { boardId } = req.params;
     const userId = req.userId;
 
     const board = await Board.findOne({ _id: boardId, ownerId: userId });
 
     if (!board) {
-      res.status(404).json({ message: 'Board not found' });
-      return;
+      throw new NotFoundError('Board not found');
     }
 
     const parsedData = boardCreationSchema.parse(req.body);
@@ -94,38 +91,26 @@ router.put('/:boardId', auth, validateObjectId('boardId'), async (req, res) => {
     await board.save();
 
     res.status(200).json(board);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({ errors: error.errors });
-    } else {
-      res.status(500).json({ error: (error as Error).message });
-    }
-  }
-});
+  })
+);
 
 router.delete(
   '/:boardId',
   auth,
   validateObjectId('boardId'),
-  async (req, res) => {
-    try {
-      const { boardId } = req.params;
-      const userId = req.userId;
+  asyncHandler(async (req, res) => {
+    const { boardId } = req.params;
+    const userId = req.userId;
 
-      const board = await Board.findOne({ _id: boardId, ownerId: userId });
+    const board = await Board.findOne({ _id: boardId, ownerId: userId });
 
-      if (!board) {
-        res.status(404).json({ message: 'Board not found' });
-        return;
-      }
-
-      await board.deleteOne();
-
-      res.status(200).json(board);
-    } catch (error) {
-      res.status(500).json({ error: (error as Error).message });
+    if (!board) {
+      throw new NotFoundError('Board not found');
     }
-  }
+
+    await board.deleteOne();
+    res.status(200).json(board);
+  })
 );
 
 router.use('/:boardId/columns', columnRoutes);
