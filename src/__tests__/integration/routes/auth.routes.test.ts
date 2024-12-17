@@ -74,7 +74,7 @@ describe('/api/auth', () => {
     });
 
     it('should return 400 if user does not exist', async () => {
-      await User.deleteMany({}); // Remove the test user
+      await User.deleteMany({});
       const res = await exe();
 
       expect(res.status).toBe(400);
