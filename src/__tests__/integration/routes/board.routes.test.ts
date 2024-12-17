@@ -147,18 +147,15 @@ describe('/api/boards', () => {
         await createUserAndToken(true);
       });
 
-      it('should allow creating first board with guest warning message', async () => {
+      it('should allow creating first board', async () => {
         const res = await request(app)
           .post('/api/boards')
           .set('x-auth-token', token)
           .send({ name: 'guest board' });
 
         expect(res.status).toBe(201);
-        expect(res.body).toHaveProperty('board');
-        expect(res.body.board).toHaveProperty('name', 'guest board');
-        expect(res.body).toHaveProperty('message');
-        expect(res.body.message).toContain('7 days');
-        expect(res.body.message).toContain('Guest');
+        expect(res.body).toHaveProperty('name', 'guest board');
+        expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
       });
 
       it('should prevent creating more than one board', async () => {
