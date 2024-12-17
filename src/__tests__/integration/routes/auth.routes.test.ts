@@ -73,6 +73,14 @@ describe('/api/auth', () => {
       expect(res.status).toBe(400);
     });
 
+    it('should return 400 if user does not exist', async () => {
+      await User.deleteMany({}); // Remove the test user
+      const res = await exe();
+
+      expect(res.status).toBe(400);
+      expect(res.body).toHaveProperty('message', 'Invalid email or password');
+    });
+
     it('should return 200 if we have a valid request', async () => {
       const res = await exe();
 
