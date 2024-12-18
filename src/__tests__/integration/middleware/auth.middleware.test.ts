@@ -33,17 +33,12 @@ describe('auth middleware', () => {
       expect(res.status).toBe(400);
     });
 
-    it('should create a guest user if no token is provided', async () => {
+    it('should return 401 if no token is provided', async () => {
       token = '';
       const res = await exe();
 
-      const guestUser = await User.findOne({ isGuest: true });
-      const newToken = res.header['x-auth-token'];
-
-      expect(res.status).toBe(200);
-      expect(guestUser).not.toBeNull();
-      expect(newToken).toBeDefined();
-      expect(guestUser!.guestExpiresAt).toBeDefined();
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
     });
 
     it('should accept valid token from regular user', async () => {

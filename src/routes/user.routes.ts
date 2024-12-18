@@ -14,11 +14,6 @@ const userSignupSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
-const guestConversionSchema = z.object({
-  email: z.string().email('Invalid email format'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
-});
-
 const usernameUpdateSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters'),
 });
@@ -52,46 +47,6 @@ router.post(
         _id: user._id,
         username: user.username,
         email: user.email,
-      });
-  })
-);
-
-router.post(
-  '/convert-guest',
-  auth,
-  asyncHandler(async (req, res) => {
-    if (!req.isGuest) {
-      throw new BadRequestError('Only guest users can convert their account');
-    }
-
-    const parsedData = guestConversionSchema.parse(req.body);
-    const { email, password } = parsedData;
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      throw new BadRequestError('Email already in use');
-    }
-
-    const user = await User.findById(req.userId);
-    if (!user) {
-      throw new NotFoundError('User not found');
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await user.convertToRegisteredUser(email, hashedPassword);
-    const token = user.generateAuthToken();
-
-    res
-      .header('x-auth-token', token)
-      .header('access-control-expose-headers', 'x-auth-token')
-      .status(200)
-      .json({
-        message: 'Successfully converted to registered user',
-        user: {
-          _id: user._id,
-          username: user.username,
-          email: user.email,
-        },
       });
   })
 );

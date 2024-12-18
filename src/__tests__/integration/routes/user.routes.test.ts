@@ -108,105 +108,6 @@ describe('/api/users', () => {
     });
   });
 
-  describe('POST /convert-guest', () => {
-    let token: string;
-    let email: string;
-    let password: string;
-    let user: InstanceType<typeof User>;
-
-    const exe = async () => {
-      return request(app)
-        .post('/api/users/convert-guest')
-        .set('x-auth-token', token)
-        .send({ email, password });
-    };
-
-    beforeEach(async () => {
-      email = 'converted@test.com';
-      password = 'password123';
-
-      user = new User({ isGuest: true });
-      await user.save();
-      token = user.generateAuthToken();
-    });
-
-    afterEach(async () => {
-      await User.deleteMany({});
-    });
-
-    it('should return 400 if user is not a guest', async () => {
-      user = new User({
-        email: 'regular@test.com',
-        password: 'password123',
-        username: 'regular',
-        isGuest: false,
-      });
-      await user.save();
-      token = user.generateAuthToken();
-
-      const res = await exe();
-
-      expect(res.status).toBe(400);
-      expect(res.body).toHaveProperty(
-        'message',
-        'Only guest users can convert their account'
-      );
-    });
-
-    it('should return 400 if email is invalid', async () => {
-      email = 'invalid_email';
-
-      const res = await exe();
-
-      expect(res.status).toBe(400);
-    });
-
-    it('should return 400 if password is less than 8 characters', async () => {
-      password = '1234567';
-
-      const res = await exe();
-
-      expect(res.status).toBe(400);
-    });
-
-    it('should return 400 if email is already in use', async () => {
-      await User.collection.insertOne({
-        email: 'converted@test.com',
-        password: 'hashedpassword',
-      });
-
-      const res = await exe();
-
-      expect(res.status).toBe(400);
-      expect(res.body).toHaveProperty('message', 'Email already in use');
-    });
-
-    it('should return 404 if user is not found', async () => {
-      await User.deleteMany({});
-
-      const res = await exe();
-
-      expect(res.status).toBe(404);
-      expect(res.body).toHaveProperty('message', 'User not found');
-    });
-
-    it('should convert guest user to registered user if input is valid', async () => {
-      const res = await exe();
-
-      const updatedUser = await User.findById(user._id);
-
-      expect(res.status).toBe(200);
-      expect(updatedUser?.isGuest).toBe(false);
-      expect(updatedUser?.email).toBe(email);
-      expect(res.header['x-auth-token']).toBeDefined();
-      expect(res.body).toHaveProperty(
-        'message',
-        'Successfully converted to registered user'
-      );
-      expect(res.body.user).toHaveProperty('email', email);
-    });
-  });
-
   describe('PUT /username', () => {
     let token: string;
     let username: string;
@@ -279,4 +180,7 @@ describe('/api/users', () => {
       expect(res.body.user).toHaveProperty('username', username);
     });
   });
+
+  // Note: Guest user conversion tests have been moved to auth.routes.test.ts
+  // as the endpoint is now /api/auth/convert-to-user
 });

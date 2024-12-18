@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import express from 'express';
 import { z } from 'zod';
+import auth from '../middleware/auth.middleware';
 import User from '../models/user.model';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError } from '../utils/errors';
@@ -12,39 +13,97 @@ const userLoginSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters long'),
 });
 
+const userRegistrationSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(8, 'Password must be at least 8 characters long'),
+  username: z.string().optional(),
+});
+
 router.post(
   '/login',
   asyncHandler(async (req, res) => {
-    try {
-      const parsedData = userLoginSchema.parse(req.body);
-      const { email, password } = parsedData;
+    const parsedData = userLoginSchema.parse(req.body);
+    const { email, password } = parsedData;
 
-      const user = await User.findOne({ email });
+    const user = await User.findOne({ email });
 
-      if (!user) {
-        throw new BadRequestError('Invalid email or password');
-      }
-
-      const isMatch = await bcrypt.compare(password, user.password!);
-
-      if (!isMatch) {
-        throw new BadRequestError('Invalid email or password');
-      }
-
-      const token = user.generateAuthToken();
-
-      res
-        .header('x-auth-token', token)
-        .header('access-control-expose-headers', 'x-auth-token')
-        .status(200)
-        .json({ token });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        throw new BadRequestError(error.errors[0].message);
-      } else {
-        throw error;
-      }
+    if (!user) {
+      throw new BadRequestError('Invalid email or password');
     }
+
+    if (user.isGuest) {
+      throw new BadRequestError('Guest users cannot log in with a password.');
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password!);
+
+    if (!isMatch) {
+      throw new BadRequestError('Invalid email or password');
+    }
+
+    const token = user.generateAuthToken();
+
+    res.json({
+      token,
+      isGuest: false,
+    });
+  })
+);
+
+router.post(
+  '/guest-session',
+  asyncHandler(async (req, res) => {
+    const guestUser = new User({
+      isGuest: true,
+      guestExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+    });
+    await guestUser.save();
+
+    const token = guestUser.generateAuthToken();
+
+    res.status(201).json({
+      token,
+      isGuest: true,
+      expiresAt: guestUser.guestExpiresAt,
+      message: 'Guest session created successfully',
+    });
+  })
+);
+
+// Convert guest to registered user
+router.post(
+  '/convert-to-user',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { email, password, username } = userRegistrationSchema.parse(
+      req.body
+    );
+
+    const user = await User.findById(req.userId);
+    if (!user || !user.isGuest) {
+      throw new BadRequestError(
+        'Only guest users can be converted to regular users'
+      );
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      throw new BadRequestError('Email already in use');
+    }
+
+    await user.convertToRegisteredUser(email, password);
+    if (username) {
+      user.username = username;
+    }
+    await user.save();
+
+    const token = user.generateAuthToken();
+
+    res.json({
+      token,
+      isGuest: false,
+      message: 'Successfully converted to registered user',
+    });
   })
 );
 
