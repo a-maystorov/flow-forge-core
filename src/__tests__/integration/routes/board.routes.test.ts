@@ -103,43 +103,46 @@ describe('/api/boards', () => {
   });
 
   describe('POST /', () => {
-    describe('regular user', () => {
-      beforeEach(async () => {
-        await createUserAndToken();
-      });
+    beforeEach(async () => {
+      await createUserAndToken();
+    });
 
-      it('should return 400 if board name is less than 1 character', async () => {
-        const res = await request(app)
-          .post('/api/boards')
-          .set('x-auth-token', token)
-          .send({ name: '' });
+    const execPost = (name: string) => {
+      return request(app)
+        .post('/api/boards')
+        .set('x-auth-token', token)
+        .send({ name });
+    };
 
-        expect(res.status).toBe(400);
-      });
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execPost('board1');
 
-      it('should save and create the board if input is valid', async () => {
-        const res = await request(app)
-          .post('/api/boards')
-          .set('x-auth-token', token)
-          .send({ name: 'board1' });
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
 
-        const board = await Board.findOne({ name: 'board1' });
+    it('should return 400 if board name is less than 1 character', async () => {
+      const res = await execPost('');
+      expect(res.status).toBe(400);
+    });
 
-        expect(res.status).toBe(201);
-        expect(board).not.toBeNull();
-        expect(board!.ownerId.toString()).toBe(user._id.toString());
-      });
+    it('should save and create the board if input is valid', async () => {
+      const res = await execPost('board1');
 
-      it('should return the board if input is valid', async () => {
-        const res = await request(app)
-          .post('/api/boards')
-          .set('x-auth-token', token)
-          .send({ name: 'board1' });
+      const board = await Board.findOne({ name: 'board1' });
 
-        expect(res.body).toHaveProperty('_id');
-        expect(res.body).toHaveProperty('name', 'board1');
-        expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
-      });
+      expect(res.status).toBe(201);
+      expect(board).not.toBeNull();
+      expect(board!.ownerId.toString()).toBe(user._id.toString());
+    });
+
+    it('should return the board if input is valid', async () => {
+      const res = await execPost('board1');
+
+      expect(res.body).toHaveProperty('_id');
+      expect(res.body).toHaveProperty('name', 'board1');
+      expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
     });
 
     describe('guest user', () => {
@@ -148,10 +151,7 @@ describe('/api/boards', () => {
       });
 
       it('should allow creating first board', async () => {
-        const res = await request(app)
-          .post('/api/boards')
-          .set('x-auth-token', token)
-          .send({ name: 'guest board' });
+        const res = await execPost('guest board');
 
         expect(res.status).toBe(201);
         expect(res.body).toHaveProperty('name', 'guest board');
@@ -160,16 +160,10 @@ describe('/api/boards', () => {
 
       it('should prevent creating more than one board', async () => {
         // Create first board
-        await request(app)
-          .post('/api/boards')
-          .set('x-auth-token', token)
-          .send({ name: 'first board' });
+        await execPost('first board');
 
         // Try to create second board
-        const res = await request(app)
-          .post('/api/boards')
-          .set('x-auth-token', token)
-          .send({ name: 'second board' });
+        const res = await execPost('second board');
 
         expect(res.status).toBe(403);
         expect(res.body).toHaveProperty(
@@ -195,6 +189,14 @@ describe('/api/boards', () => {
         .set('x-auth-token', token)
         .send({ name: newName });
     };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execPut();
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
 
     it('should return 404 if the board is not found', async () => {
       boardId = new mongoose.Types.ObjectId();
@@ -232,6 +234,14 @@ describe('/api/boards', () => {
         .delete(`/api/boards/${boardId}`)
         .set('x-auth-token', token);
     };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execDelete();
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
 
     it('should return 404 if the board does not exist', async () => {
       boardId = new mongoose.Types.ObjectId();

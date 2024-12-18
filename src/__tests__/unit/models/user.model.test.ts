@@ -10,7 +10,7 @@ interface JWTPayload {
   iat?: number;
 }
 
-describe('User Model', () => {
+describe('user model', () => {
   beforeAll(async () => {
     await connectDB();
   });

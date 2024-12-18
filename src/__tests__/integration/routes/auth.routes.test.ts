@@ -125,7 +125,7 @@ describe('/api/auth', () => {
     });
   });
 
-  describe('POST /api/auth/guest-session', () => {
+  describe('POST /guest-session', () => {
     afterEach(async () => {
       await User.deleteMany({});
     });
@@ -153,7 +153,7 @@ describe('/api/auth', () => {
     });
   });
 
-  describe('POST /api/auth/convert-to-user', () => {
+  describe('POST /convert-to-user', () => {
     afterEach(async () => {
       await User.deleteMany({});
     });

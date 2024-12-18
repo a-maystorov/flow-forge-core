@@ -56,6 +56,14 @@ describe('/api/boards/:boardId/columns', () => {
         .send({ name: columnName });
     };
 
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execPost('New Column');
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
+
     it('should return 404 if invalid board id is passed', async () => {
       boardId = '1';
 
@@ -158,6 +166,14 @@ describe('/api/boards/:boardId/columns', () => {
         .send({ name: newName });
     };
 
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execPut('Updated Column');
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
+
     it('should return 404 if invalid board id is passed', async () => {
       boardId = '1';
 
@@ -214,6 +230,14 @@ describe('/api/boards/:boardId/columns', () => {
         .delete(`/api/boards/${boardId}/columns/${columnId}`)
         .set('x-auth-token', token);
     };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execDelete();
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
 
     it('should return 404 if invalid board id is passed', async () => {
       boardId = '1';
