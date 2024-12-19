@@ -3,8 +3,9 @@ import express from 'express';
 import { z } from 'zod';
 import auth from '../middleware/auth.middleware';
 import User from '../models/user.model';
+import Board from '../models/board.model'; // Import Board model
 import { asyncHandler } from '../utils/asyncHandler';
-import { BadRequestError } from '../utils/errors';
+import { BadRequestError, NotFoundError } from '../utils/errors'; // Import NotFoundError
 
 const router = express.Router();
 
@@ -53,11 +54,22 @@ router.post(
 router.post(
   '/guest-session',
   asyncHandler(async (req, res) => {
+    // First, clean up expired guest sessions
+    await User.cleanupExpiredGuests();
+
+    // Create new guest user
     const guestUser = new User({
       isGuest: true,
       guestExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
     });
-    await guestUser.save();
+
+    try {
+      await guestUser.save();
+    } catch (_error) {
+      // If there's a database error, do a force cleanup of all expired guests and try again
+      await User.cleanupExpiredGuests();
+      await guestUser.save();
+    }
 
     const token = guestUser.generateAuthToken();
 
@@ -103,6 +115,29 @@ router.post(
       token,
       isGuest: false,
       message: 'Successfully converted to registered user',
+    });
+  })
+);
+
+router.post(
+  '/guest-logout',
+  auth,
+  asyncHandler(async (req, res) => {
+    if (!req.isGuest) {
+      throw new BadRequestError('This endpoint is only for guest users');
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    await Board.deleteMany({ ownerId: req.userId });
+
+    await user.deleteOne();
+
+    res.status(200).json({
+      message: 'Guest session ended and data cleaned up successfully',
     });
   })
 );
