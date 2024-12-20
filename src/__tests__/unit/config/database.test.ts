@@ -82,7 +82,7 @@ describe('database configuration', () => {
 
     it('should stop memory server if it exists', async () => {
       process.env.NODE_ENV = 'test';
-      await connectDB(); // This creates the memory server
+      await connectDB();
       await disconnectDB();
 
       const memoryServer = await MongoMemoryServer.create();

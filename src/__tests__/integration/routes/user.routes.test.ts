@@ -180,7 +180,4 @@ describe('/api/users', () => {
       expect(res.body.user).toHaveProperty('username', username);
     });
   });
-
-  // Note: Guest user conversion tests have been moved to auth.routes.test.ts
-  // as the endpoint is now /api/auth/convert-to-user
 });

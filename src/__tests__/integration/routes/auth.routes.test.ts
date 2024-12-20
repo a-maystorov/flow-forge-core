@@ -154,7 +154,6 @@ describe('/api/auth', () => {
     });
 
     it('should clean up expired guest sessions when creating a new one', async () => {
-      // Create an expired guest user
       const expiredUser = new User({
         isGuest: true,
         guestExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
@@ -240,7 +239,6 @@ describe('/api/auth', () => {
     });
 
     it('should return 400 if user is not a guest', async () => {
-      // Create regular user and token
       const regularUser = new User({
         email: 'test@test.com',
         password: 'password123',
@@ -258,7 +256,6 @@ describe('/api/auth', () => {
     });
 
     it('should successfully logout guest user and delete their data', async () => {
-      // Create a board for the guest user
       const board = new Board({ name: 'Test Board', ownerId: guestUser._id });
       await board.save();
 
@@ -269,11 +266,9 @@ describe('/api/auth', () => {
         'Guest session ended and data cleaned up successfully'
       );
 
-      // Verify user was deleted
       const userExists = await User.findById(guestUser._id);
       expect(userExists).toBeNull();
 
-      // Verify board was deleted
       const boardExists = await Board.findById(board._id);
       expect(boardExists).toBeNull();
     });
@@ -318,14 +313,12 @@ describe('/api/auth', () => {
     });
 
     it('should return 400 when email already exists', async () => {
-      // Create existing user with email
       const existingUser = new User({
         email: 'existing@example.com',
         password: 'password123',
       });
       await existingUser.save();
 
-      // Create guest user
       const guestUser = new User({
         isGuest: true,
         guestExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
