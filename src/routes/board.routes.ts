@@ -14,6 +14,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const boards = await Board.find({ ownerId: req.userId }).populate({
       path: 'columns',
+      populate: {
+        path: 'tasks',
+        populate: {
+          path: 'subtasks',
+        },
+      },
     });
     res.status(200).json(boards);
   })
@@ -32,6 +38,12 @@ router.get(
       ownerId: userId,
     }).populate({
       path: 'columns',
+      populate: {
+        path: 'tasks',
+        populate: {
+          path: 'subtasks',
+        },
+      },
     });
 
     if (!board) {
