@@ -1,5 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
+import { Types } from 'mongoose';
 import { auth, validateObjectId } from '../middleware';
 import Column from '../models/column.model';
 import Task from '../models/task.model';
@@ -16,6 +17,10 @@ const taskSchema = z.object({
   description: z.string().optional(),
   status: z.enum(['TODO', 'IN_PROGRESS', 'DONE']).optional(),
   dueDate: z.string().optional(),
+});
+
+const moveTaskSchema = z.object({
+  targetColumnId: z.string().min(1, 'Target column ID is required'),
 });
 
 router.post(
@@ -60,6 +65,44 @@ router.put(
     task.title = title;
     task.description = description;
     await task.save();
+
+    res.status(200).json(task);
+  })
+);
+
+router.patch(
+  '/:taskId/move',
+  validateObjectId('taskId'),
+  auth,
+  asyncHandler(async (req, res) => {
+    const { taskId, columnId: sourceColumnId } = req.params;
+    const { targetColumnId } = moveTaskSchema.parse(req.body);
+
+    const [sourceColumn, targetColumn] = await Promise.all([
+      Column.findById(sourceColumnId),
+      Column.findById(targetColumnId),
+    ]);
+
+    if (!sourceColumn) {
+      throw new NotFoundError('Source column not found');
+    }
+
+    if (!targetColumn) {
+      throw new NotFoundError('Target column not found');
+    }
+
+    const task = await Task.findOne({ _id: taskId, columnId: sourceColumnId });
+    if (!task) {
+      throw new NotFoundError('Task not found in source column');
+    }
+
+    task.columnId = new Types.ObjectId(targetColumnId);
+    await task.save();
+
+    await Promise.all([
+      Column.updateOne({ _id: sourceColumnId }, { $pull: { tasks: taskId } }),
+      Column.updateOne({ _id: targetColumnId }, { $push: { tasks: taskId } }),
+    ]);
 
     res.status(200).json(task);
   })

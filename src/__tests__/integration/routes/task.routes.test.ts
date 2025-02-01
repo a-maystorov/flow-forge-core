@@ -248,7 +248,7 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
 
       const columnInDB = await Column.findById(columnId);
 
-      expect(columnInDB!.tasks).not.toContainEqual(taskId);
+      expect(columnInDB!.tasks).not.toContain(taskId);
     });
 
     it('should return the deleted task', async () => {
@@ -256,6 +256,102 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
 
       expect(res.body).toHaveProperty('_id', taskId.toString());
       expect(res.body).toHaveProperty('title', 'Task to delete');
+    });
+  });
+
+  describe('PATCH /:taskId/move', () => {
+    let taskId: string | Types.ObjectId;
+    let targetColumnId: string | Types.ObjectId;
+    let task: InstanceType<typeof Task>;
+
+    beforeEach(async () => {
+      await createUserAndToken();
+      await createBoardAndColumn();
+
+      task = new Task({
+        title: 'Test Task',
+        description: 'Test Description',
+        columnId,
+      });
+      await task.save();
+      taskId = task._id;
+
+      const targetColumn = new Column({ name: 'Target Column', boardId });
+      await targetColumn.save();
+      targetColumnId = targetColumn._id;
+
+      await Column.findByIdAndUpdate(columnId, {
+        $push: { tasks: taskId },
+      });
+    });
+
+    const execMove = () => {
+      return request(app)
+        .patch(
+          `/api/boards/${boardId}/columns/${columnId}/tasks/${taskId}/move`
+        )
+        .set('x-auth-token', token)
+        .send({ targetColumnId });
+    };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execMove();
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
+
+    it('should return 404 if source column is not found', async () => {
+      columnId = new mongoose.Types.ObjectId();
+      const res = await execMove();
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toBe('Source column not found');
+    });
+
+    it('should return 404 if target column is not found', async () => {
+      targetColumnId = new mongoose.Types.ObjectId();
+      const res = await execMove();
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toBe('Target column not found');
+    });
+
+    it('should return 404 if task is not found in source column', async () => {
+      taskId = new mongoose.Types.ObjectId();
+      const res = await execMove();
+
+      expect(res.status).toBe(404);
+      expect(res.body.message).toBe('Task not found in source column');
+    });
+
+    it('should move the task to target column if input is valid', async () => {
+      const res = await execMove();
+
+      expect(res.status).toBe(200);
+      expect(res.body.columnId).toBe(targetColumnId.toString());
+
+      const updatedTask = await Task.findById(taskId);
+      expect(updatedTask?.columnId.toString()).toBe(targetColumnId.toString());
+
+      const sourceColumn = await Column.findById(columnId);
+      expect(sourceColumn?.tasks).not.toContain(taskId);
+
+      const targetColumn = await Column.findById(targetColumnId);
+      expect(targetColumn?.tasks.map((id) => id.toString())).toContain(
+        taskId.toString()
+      );
+    });
+
+    it('should return 400 if targetColumnId is not provided', async () => {
+      targetColumnId = '';
+      const res = await execMove();
+
+      expect(res.status).toBe(400);
+      expect(res.body.errors[0].message).toMatch(
+        /Target column ID is required/
+      );
     });
   });
 });
