@@ -6,6 +6,7 @@ export interface ITask {
   status: 'Todo' | 'Doing' | 'Done';
   subtasks: Types.ObjectId[];
   columnId: Types.ObjectId;
+  position: number;
 }
 
 const TaskSchema: Schema = new Schema({
@@ -18,6 +19,15 @@ const TaskSchema: Schema = new Schema({
     ref: 'Column',
     required: true,
   },
+  position: { type: Number, required: false },
+});
+
+TaskSchema.pre('save', async function (next) {
+  if (this.isNew && this.position === undefined) {
+    const count = await Task.countDocuments({ columnId: this.columnId });
+    this.position = count;
+  }
+  next();
 });
 
 const Task = mongoose.model<ITask>('Task', TaskSchema);

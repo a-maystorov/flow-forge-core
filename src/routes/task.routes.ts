@@ -23,6 +23,10 @@ const moveTaskSchema = z.object({
   targetColumnId: z.string().min(1, 'Target column ID is required'),
 });
 
+const reorderTaskSchema = z.object({
+  newPosition: z.number().min(0, 'Position must be non-negative'),
+});
+
 router.post(
   '/',
   auth,
@@ -67,6 +71,54 @@ router.put(
     await task.save();
 
     res.status(200).json(task);
+  })
+);
+
+router.patch(
+  '/:taskId/reorder',
+  validateObjectId('taskId'),
+  auth,
+  asyncHandler(async (req, res) => {
+    const { taskId, columnId } = req.params;
+    const { newPosition } = reorderTaskSchema.parse(req.body);
+
+    const task = await Task.findOne({ _id: taskId, columnId });
+    if (!task) {
+      throw new NotFoundError('Task not found');
+    }
+
+    const oldPosition = task.position;
+
+    if (oldPosition === newPosition) {
+      return res.status(200).json(task);
+    }
+
+    await Task.bulkWrite([
+      {
+        updateMany: {
+          filter: {
+            columnId,
+            _id: { $ne: task._id },
+            position:
+              oldPosition < newPosition
+                ? { $gt: oldPosition, $lte: newPosition } // Moving down
+                : { $gte: newPosition, $lt: oldPosition }, // Moving up
+          },
+          update: {
+            $inc: { position: oldPosition < newPosition ? -1 : 1 },
+          },
+        },
+      },
+      {
+        updateOne: {
+          filter: { _id: task._id },
+          update: { $set: { position: newPosition } },
+        },
+      },
+    ]);
+
+    const updatedTask = await Task.findById(taskId);
+    res.status(200).json(updatedTask);
   })
 );
 

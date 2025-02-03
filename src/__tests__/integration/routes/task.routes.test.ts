@@ -354,4 +354,117 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       );
     });
   });
+
+  describe('PATCH /:taskId/reorder', () => {
+    let taskId: string | Types.ObjectId;
+    let task1: InstanceType<typeof Task>;
+    let task2: InstanceType<typeof Task>;
+    let task3: InstanceType<typeof Task>;
+
+    beforeEach(async () => {
+      await createUserAndToken();
+      await createBoardAndColumn();
+
+      task1 = new Task({ title: 'Task 1', columnId, position: 0 });
+      task2 = new Task({ title: 'Task 2', columnId, position: 1 });
+      task3 = new Task({ title: 'Task 3', columnId, position: 2 });
+
+      await Promise.all([task1.save(), task2.save(), task3.save()]);
+      taskId = task2._id; // We'll be moving task2 in most tests
+    });
+
+    const execReorder = (newPosition: number) => {
+      return request(app)
+        .patch(
+          `/api/boards/${boardId}/columns/${columnId}/tasks/${taskId}/reorder`
+        )
+        .set('x-auth-token', token)
+        .send({ newPosition });
+    };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execReorder(0);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
+
+    it('should return 404 if invalid column id is passed', async () => {
+      columnId = '1';
+
+      const res = await execReorder(0);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 if task is not found', async () => {
+      taskId = new mongoose.Types.ObjectId();
+
+      const res = await execReorder(0);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 400 if newPosition is negative', async () => {
+      const res = await execReorder(-1);
+
+      expect(res.status).toBe(400);
+      expect(res.body.errors[0].message).toMatch(
+        /Position must be non-negative/
+      );
+    });
+
+    it('should move task up when newPosition is less than current position', async () => {
+      const res = await execReorder(0);
+
+      const [updatedTask1, updatedTask2, updatedTask3] = await Promise.all([
+        Task.findById(task1._id),
+        Task.findById(task2._id),
+        Task.findById(task3._id),
+      ]);
+
+      expect(res.status).toBe(200);
+      expect(updatedTask1!.position).toBe(1); // Shifted down
+      expect(updatedTask2!.position).toBe(0); // Moved to front
+      expect(updatedTask3!.position).toBe(2); // Unchanged
+    });
+
+    it('should move task down when newPosition is greater than current position', async () => {
+      const res = await execReorder(2);
+
+      const [updatedTask1, updatedTask2, updatedTask3] = await Promise.all([
+        Task.findById(task1._id),
+        Task.findById(task2._id),
+        Task.findById(task3._id),
+      ]);
+
+      expect(res.status).toBe(200);
+      expect(updatedTask1!.position).toBe(0); // Unchanged
+      expect(updatedTask2!.position).toBe(2); // Moved to back
+      expect(updatedTask3!.position).toBe(1); // Shifted up
+    });
+
+    it('should not change positions if newPosition equals current position', async () => {
+      const res = await execReorder(1);
+
+      const [updatedTask1, updatedTask2, updatedTask3] = await Promise.all([
+        Task.findById(task1._id),
+        Task.findById(task2._id),
+        Task.findById(task3._id),
+      ]);
+
+      expect(res.status).toBe(200);
+      expect(updatedTask1!.position).toBe(0);
+      expect(updatedTask2!.position).toBe(1);
+      expect(updatedTask3!.position).toBe(2);
+    });
+
+    it('should return the reordered task if successful', async () => {
+      const res = await execReorder(0);
+
+      expect(res.body).toHaveProperty('_id', taskId.toString());
+      expect(res.body).toHaveProperty('position', 0);
+    });
+  });
 });
