@@ -318,30 +318,12 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       expect(res.body.message).toBe('Target column not found');
     });
 
-    it('should return 404 if task is not found in source column', async () => {
+    it('should return 404 if task is not found', async () => {
       taskId = new mongoose.Types.ObjectId();
       const res = await execMove();
 
       expect(res.status).toBe(404);
-      expect(res.body.message).toBe('Task not found in source column');
-    });
-
-    it('should move the task to target column if input is valid', async () => {
-      const res = await execMove();
-
-      expect(res.status).toBe(200);
-      expect(res.body.columnId).toBe(targetColumnId.toString());
-
-      const updatedTask = await Task.findById(taskId);
-      expect(updatedTask?.columnId.toString()).toBe(targetColumnId.toString());
-
-      const sourceColumn = await Column.findById(columnId);
-      expect(sourceColumn?.tasks).not.toContain(taskId);
-
-      const targetColumn = await Column.findById(targetColumnId);
-      expect(targetColumn?.tasks.map((id) => id.toString())).toContain(
-        taskId.toString()
-      );
+      expect(res.body.message).toBe('Task not found');
     });
 
     it('should return 400 if targetColumnId is not provided', async () => {
@@ -352,6 +334,29 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       expect(res.body.errors[0].message).toMatch(
         /Target column ID is required/
       );
+    });
+
+    it('should move the task to target column if input is valid', async () => {
+      const res = await execMove();
+
+      expect(res.status).toBe(200);
+      expect(res.body.columnId).toBe(targetColumnId.toString());
+      expect(res.body.position).toBe(0);
+
+      const updatedTask = await Task.findById(taskId);
+      expect(updatedTask?.columnId.toString()).toBe(targetColumnId.toString());
+      expect(updatedTask?.position).toBe(0);
+
+      // Check that other tasks in target column have been shifted
+      const targetTasks = await Task.find({ columnId: targetColumnId }).sort(
+        'position'
+      );
+      expect(targetTasks[0]._id.toString()).toBe(taskId.toString());
+      if (targetTasks.length > 1) {
+        expect(
+          targetTasks.slice(1).every((task, i) => task.position === i + 1)
+        ).toBe(true);
+      }
     });
   });
 

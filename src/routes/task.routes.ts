@@ -130,9 +130,10 @@ router.patch(
     const { taskId, columnId: sourceColumnId } = req.params;
     const { targetColumnId } = moveTaskSchema.parse(req.body);
 
-    const [sourceColumn, targetColumn] = await Promise.all([
+    const [sourceColumn, targetColumn, task] = await Promise.all([
       Column.findById(sourceColumnId),
       Column.findById(targetColumnId),
+      Task.findById(taskId),
     ]);
 
     if (!sourceColumn) {
@@ -143,18 +144,18 @@ router.patch(
       throw new NotFoundError('Target column not found');
     }
 
-    const task = await Task.findOne({ _id: taskId, columnId: sourceColumnId });
     if (!task) {
-      throw new NotFoundError('Task not found in source column');
+      throw new NotFoundError('Task not found');
     }
 
-    task.columnId = new Types.ObjectId(targetColumnId);
-    await task.save();
+    await Task.updateMany(
+      { columnId: targetColumnId },
+      { $inc: { position: 1 } }
+    );
 
-    await Promise.all([
-      Column.updateOne({ _id: sourceColumnId }, { $pull: { tasks: taskId } }),
-      Column.updateOne({ _id: targetColumnId }, { $push: { tasks: taskId } }),
-    ]);
+    task.columnId = new Types.ObjectId(targetColumnId);
+    task.position = 0;
+    await task.save();
 
     res.status(200).json(task);
   })
