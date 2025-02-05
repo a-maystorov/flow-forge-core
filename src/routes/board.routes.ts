@@ -14,6 +14,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const boards = await Board.find({ ownerId: req.userId }).populate({
       path: 'columns',
+      options: { sort: { position: 1 } },
       populate: {
         path: 'tasks',
         populate: {

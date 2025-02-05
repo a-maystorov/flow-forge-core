@@ -148,6 +148,118 @@ describe('/api/boards/:boardId/columns', () => {
     });
   });
 
+  describe('POST /batch', () => {
+    beforeEach(async () => {
+      await createUserAndToken();
+      await createBoard('Test Board');
+    });
+
+    const execBatchPost = (columnNames: string[]) => {
+      return request(app)
+        .post(`/api/boards/${boardId}/columns/batch`)
+        .set('x-auth-token', token)
+        .send({ columns: columnNames });
+    };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execBatchPost(['Column 1', 'Column 2']);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
+
+    it('should return 404 if invalid board id is passed', async () => {
+      boardId = '1';
+      const res = await execBatchPost(['Column 1', 'Column 2']);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 if board is not found', async () => {
+      boardId = new mongoose.Types.ObjectId();
+      const res = await execBatchPost(['Column 1', 'Column 2']);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 400 if any column name is invalid', async () => {
+      const res = await execBatchPost(['Column 1', '']);
+
+      expect(res.status).toBe(400);
+      expect(res.body.errors[0].message).toMatch(/Column name is required/);
+    });
+
+    it('should save all columns if input is valid', async () => {
+      const columnNames = ['Column 1', 'Column 2', 'Column 3'];
+      const res = await execBatchPost(columnNames);
+
+      expect(res.status).toBe(201);
+
+      // Check if all columns are saved
+      for (const name of columnNames) {
+        const columnInDB = await Column.findOne({ name });
+        expect(columnInDB).not.toBeNull();
+        expect(columnInDB!.boardId.toString()).toBe(boardId.toString());
+      }
+    });
+
+    it('should add all column IDs to the board’s columns array', async () => {
+      const columnNames = ['Column 1', 'Column 2'];
+      await execBatchPost(columnNames);
+
+      const boardInDB = await Board.findById(boardId);
+      expect(boardInDB!.columns).toHaveLength(columnNames.length);
+      expect(boardInDB!.columns[0]).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(boardInDB!.columns[1]).toBeInstanceOf(mongoose.Types.ObjectId);
+    });
+
+    it('should maintain correct position order', async () => {
+      const columnNames = ['Column 1', 'Column 2', 'Column 3'];
+      await execBatchPost(columnNames);
+
+      const columns = await Column.find({ boardId }).sort({ position: 1 });
+      expect(columns).toHaveLength(columnNames.length);
+      columns.forEach((col, index) => {
+        expect(col.name).toBe(columnNames[index]);
+        expect(col.position).toBe(index);
+      });
+    });
+
+    describe('guest user', () => {
+      beforeEach(async () => {
+        await createUserAndToken(true);
+        await createBoard('Test Board');
+      });
+
+      it('should allow creating up to three columns', async () => {
+        const res = await execBatchPost(['Column 1', 'Column 2', 'Column 3']);
+        expect(res.status).toBe(201);
+      });
+
+      it('should prevent creating more than three columns', async () => {
+        const res = await execBatchPost([
+          'Column 1',
+          'Column 2',
+          'Column 3',
+          'Column 4',
+        ]);
+        expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty(
+          'message',
+          'Guest users are limited to creating only three columns.'
+        );
+      });
+
+      it('should prevent creating columns if user already has some', async () => {
+        await execBatchPost(['Column 1', 'Column 2']);
+
+        const res = await execBatchPost(['Column 3', 'Column 4']);
+        expect(res.status).toBe(403);
+      });
+    });
+  });
+
   describe('PUT /:columnId', () => {
     let columnId: string | Types.ObjectId;
 
