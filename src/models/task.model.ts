@@ -23,7 +23,7 @@ const TaskSchema: Schema = new Schema({
 });
 
 TaskSchema.pre('save', async function (next) {
-  if (this.isNew && this.position === undefined) {
+  if (this.position === undefined || this.position === null) {
     const count = await Task.countDocuments({ columnId: this.columnId });
     this.position = count;
   }

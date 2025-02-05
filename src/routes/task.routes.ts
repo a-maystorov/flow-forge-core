@@ -148,13 +148,12 @@ router.patch(
       throw new NotFoundError('Task not found');
     }
 
-    await Task.updateMany(
-      { columnId: targetColumnId },
-      { $inc: { position: 1 } }
-    );
+    const targetColumnTaskCount = await Task.countDocuments({
+      columnId: targetColumnId,
+    });
 
     task.columnId = new Types.ObjectId(targetColumnId);
-    task.position = 0;
+    task.position = targetColumnTaskCount;
     await task.save();
 
     res.status(200).json(task);

@@ -337,25 +337,30 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
     });
 
     it('should move the task to target column if input is valid', async () => {
+      const expectedPosition = await Task.countDocuments({
+        columnId: targetColumnId,
+      });
+
       const res = await execMove();
 
       expect(res.status).toBe(200);
       expect(res.body.columnId).toBe(targetColumnId.toString());
-      expect(res.body.position).toBe(0);
+      expect(res.body.position).toBe(expectedPosition);
 
       const updatedTask = await Task.findById(taskId);
       expect(updatedTask?.columnId.toString()).toBe(targetColumnId.toString());
-      expect(updatedTask?.position).toBe(0);
+      expect(updatedTask?.position).toBe(expectedPosition);
 
-      // Check that other tasks in target column have been shifted
+      // Check that other tasks in target column maintain their positions
       const targetTasks = await Task.find({ columnId: targetColumnId }).sort(
         'position'
       );
-      expect(targetTasks[0]._id.toString()).toBe(taskId.toString());
-      if (targetTasks.length > 1) {
-        expect(
-          targetTasks.slice(1).every((task, i) => task.position === i + 1)
-        ).toBe(true);
+      expect(targetTasks[targetTasks.length - 1]._id.toString()).toBe(
+        taskId.toString()
+      );
+      // Verify other tasks maintain their original positions
+      for (let i = 0; i < targetTasks.length - 1; i++) {
+        expect(targetTasks[i].position).toBe(i);
       }
     });
   });
