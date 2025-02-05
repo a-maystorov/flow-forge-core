@@ -336,32 +336,66 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       );
     });
 
-    it('should move the task to target column if input is valid', async () => {
-      const expectedPosition = await Task.countDocuments({
-        columnId: targetColumnId,
+    describe('when moving a task with valid input', () => {
+      let expectedPosition: number;
+
+      beforeEach(async () => {
+        expectedPosition = await Task.countDocuments({
+          columnId: targetColumnId,
+        });
       });
 
-      const res = await execMove();
+      it('should return 200 with updated task data', async () => {
+        const res = await execMove();
 
-      expect(res.status).toBe(200);
-      expect(res.body.columnId).toBe(targetColumnId.toString());
-      expect(res.body.position).toBe(expectedPosition);
+        expect(res.status).toBe(200);
+        expect(res.body.columnId).toBe(targetColumnId.toString());
+        expect(res.body.position).toBe(expectedPosition);
+      });
 
-      const updatedTask = await Task.findById(taskId);
-      expect(updatedTask?.columnId.toString()).toBe(targetColumnId.toString());
-      expect(updatedTask?.position).toBe(expectedPosition);
+      it('should update task columnId and position in database', async () => {
+        await execMove();
 
-      // Check that other tasks in target column maintain their positions
-      const targetTasks = await Task.find({ columnId: targetColumnId }).sort(
-        'position'
-      );
-      expect(targetTasks[targetTasks.length - 1]._id.toString()).toBe(
-        taskId.toString()
-      );
-      // Verify other tasks maintain their original positions
-      for (let i = 0; i < targetTasks.length - 1; i++) {
-        expect(targetTasks[i].position).toBe(i);
-      }
+        const updatedTask = await Task.findById(taskId);
+        expect(updatedTask?.columnId.toString()).toBe(
+          targetColumnId.toString()
+        );
+        expect(updatedTask?.position).toBe(expectedPosition);
+      });
+
+      it('should remove task from source column', async () => {
+        await execMove();
+
+        const sourceColumn = await Column.findById(columnId);
+        expect(sourceColumn?.tasks).not.toContain(taskId);
+      });
+
+      it('should add task to target column', async () => {
+        await execMove();
+
+        const targetColumn = await Column.findById(targetColumnId);
+        expect(targetColumn?.tasks.map((t) => t.toString())).toContain(
+          taskId.toString()
+        );
+      });
+
+      it('should maintain correct task positions in target column', async () => {
+        await execMove();
+
+        const targetTasks = await Task.find({ columnId: targetColumnId }).sort(
+          'position'
+        );
+
+        // New task should be at the end
+        expect(targetTasks[targetTasks.length - 1]._id.toString()).toBe(
+          taskId.toString()
+        );
+
+        // Other tasks should maintain their positions
+        for (let i = 0; i < targetTasks.length - 1; i++) {
+          expect(targetTasks[i].position).toBe(i);
+        }
+      });
     });
   });
 

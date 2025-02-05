@@ -148,6 +148,14 @@ router.patch(
       throw new NotFoundError('Task not found');
     }
 
+    await Column.findByIdAndUpdate(sourceColumnId, {
+      $pull: { tasks: taskId },
+    });
+
+    await Column.findByIdAndUpdate(targetColumnId, {
+      $push: { tasks: taskId },
+    });
+
     const targetColumnTaskCount = await Task.countDocuments({
       columnId: targetColumnId,
     });
