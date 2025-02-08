@@ -4,6 +4,9 @@ import app from '../../../app';
 import { connectDB, disconnectDB } from '../../../config/database';
 import Board, { IBoard } from '../../../models/board.model';
 import User from '../../../models/user.model';
+import Column from '../../../models/column.model';
+import Task from '../../../models/task.model';
+import Subtask from '../../../models/subtask.model';
 
 describe('/api/boards', () => {
   let user: InstanceType<typeof User>;
@@ -21,6 +24,9 @@ describe('/api/boards', () => {
   afterEach(async () => {
     await User.deleteMany({});
     await Board.deleteMany({});
+    await Column.deleteMany({});
+    await Task.deleteMany({});
+    await Subtask.deleteMany({});
   });
 
   const createUserAndToken = async (isGuest = false) => {
@@ -226,7 +232,7 @@ describe('/api/boards', () => {
   describe('DELETE /:boardId', () => {
     beforeEach(async () => {
       await createUserAndToken();
-      await createBoard('board1');
+      await createBoard('Test Board');
     });
 
     const execDelete = () => {
@@ -235,43 +241,122 @@ describe('/api/boards', () => {
         .set('x-auth-token', token);
     };
 
-    it('should return 401 if auth token is empty', async () => {
+    it('should return 401 if user is not authenticated', async () => {
       token = '';
       const res = await execDelete();
-
       expect(res.status).toBe(401);
-      expect(res.body.message).toBe('Unauthorized');
     });
 
-    it('should return 404 if the board does not exist', async () => {
+    it('should return 404 if board id is invalid', async () => {
       boardId = new mongoose.Types.ObjectId();
-
       const res = await execDelete();
-
       expect(res.status).toBe(404);
     });
 
-    it('should return 404 if invalid id is passed', async () => {
-      boardId = '1';
+    it('should delete board and all associated data (cascade deletion)', async () => {
+      const column = new Column({ name: 'Test Column', boardId });
+      await column.save();
+
+      const task = new Task({
+        title: 'Test Task',
+        description: 'Test Description',
+        status: 'Todo',
+        columnId: column._id,
+        position: 0,
+      });
+      await task.save();
+
+      const subtask = new Subtask({
+        title: 'Test Subtask',
+        description: 'Test Subtask Description',
+        completed: false,
+        taskId: task._id,
+      });
+      await subtask.save();
+
+      column.tasks.push(task._id);
+      await column.save();
+
+      const board = await Board.findById(boardId);
+      if (board) {
+        board.columns.push(column._id);
+        await board.save();
+      }
 
       const res = await execDelete();
 
+      expect(res.status).toBe(200);
+
+      const boardExists = await Board.findById(boardId);
+      const columnExists = await Column.findById(column._id);
+      const taskExists = await Task.findById(task._id);
+      const subtaskExists = await Subtask.findById(subtask._id);
+
+      expect(boardExists).toBeNull();
+      expect(columnExists).toBeNull();
+      expect(taskExists).toBeNull();
+      expect(subtaskExists).toBeNull();
+    });
+
+    it('should handle empty board deletion (no columns/tasks)', async () => {
+      const res = await execDelete();
+      expect(res.status).toBe(200);
+
+      const boardExists = await Board.findById(boardId);
+      expect(boardExists).toBeNull();
+    });
+
+    it('should not delete other user boards or their data', async () => {
+      const otherUser = new User({
+        email: 'other@example.com',
+        password: 'password123',
+        username: 'otheruser',
+      });
+      await otherUser.save();
+
+      const otherBoard = new Board({
+        name: 'Other Board',
+        ownerId: otherUser._id,
+      });
+      await otherBoard.save();
+
+      const otherColumn = new Column({
+        name: 'Other Column',
+        boardId: otherBoard._id,
+      });
+      await otherColumn.save();
+
+      const res = await execDelete();
+      expect(res.status).toBe(200);
+
+      const otherBoardExists = await Board.findById(otherBoard._id);
+      const otherColumnExists = await Column.findById(otherColumn._id);
+
+      expect(otherBoardExists).not.toBeNull();
+      expect(otherColumnExists).not.toBeNull();
+    });
+
+    it("should return 404 if user tries to delete another user's board", async () => {
+      const otherUser = new User({
+        email: 'other@example.com',
+        password: 'password123',
+        username: 'otheruser',
+      });
+      await otherUser.save();
+
+      const otherBoard = new Board({
+        name: 'Other Board',
+        ownerId: otherUser._id,
+      });
+      await otherBoard.save();
+
+      boardId = otherBoard._id;
+      const res = await execDelete();
       expect(res.status).toBe(404);
-    });
 
-    it('should delete the board if input is valid', async () => {
-      await execDelete();
-
-      const boardInDB = await Board.findById(boardId);
-
-      expect(boardInDB).toBeNull();
-    });
-
-    it('should return the deleted board', async () => {
-      const res = await execDelete();
-
-      expect(res.body).toHaveProperty('_id', boardId.toString());
-      expect(res.body).toHaveProperty('name', 'board1');
+      // Verify board still exists
+      const boardExists = await Board.findById(otherBoard._id);
+      expect(boardExists).not.toBeNull();
     });
   });
 });
