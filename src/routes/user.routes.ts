@@ -39,15 +39,12 @@ router.post(
     await user.save();
     const token = user.generateAuthToken();
 
-    res
-      .header('x-auth-token', token)
-      .header('access-control-expose-headers', 'x-auth-token')
-      .status(201)
-      .json({
-        _id: user._id,
-        username: user.username,
-        email: user.email,
-      });
+    res.status(201).json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      token,
+    });
   })
 );
 
