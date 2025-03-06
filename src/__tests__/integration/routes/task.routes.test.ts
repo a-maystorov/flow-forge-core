@@ -367,7 +367,7 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
         await execMove();
 
         const sourceColumn = await Column.findById(columnId);
-        expect(sourceColumn?.tasks).not.toContain(taskId);
+        expect(sourceColumn!.tasks).not.toContain(taskId);
       });
 
       it('should add task to target column', async () => {
@@ -395,6 +395,70 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
         for (let i = 0; i < targetTasks.length - 1; i++) {
           expect(targetTasks[i].position).toBe(i);
         }
+      });
+
+      it('should update positions of remaining tasks in source column after moving', async () => {
+        const task1 = new Task({
+          title: 'Task at position 0',
+          columnId,
+          position: 0,
+        });
+
+        const task2 = new Task({
+          title: 'Task at position 1',
+          columnId,
+          position: 1,
+        });
+
+        const task3 = new Task({
+          title: 'Task at position 2',
+          columnId,
+          position: 2,
+        });
+
+        const task4 = new Task({
+          title: 'Task at position 3',
+          columnId,
+          position: 3,
+        });
+
+        await Promise.all([
+          task1.save(),
+          task2.save(),
+          task3.save(),
+          task4.save(),
+        ]);
+
+        await Column.findByIdAndUpdate(columnId, {
+          $push: {
+            tasks: {
+              $each: [task1._id, task2._id, task3._id, task4._id],
+            },
+          },
+        });
+
+        taskId = task2._id;
+        await execMove();
+
+        const sourceTasks = await Task.find({ columnId }).sort('position');
+
+        // Should now have 4 tasks (including the original one created in beforeEach)
+        expect(sourceTasks.length).toBe(4);
+
+        // Check individual positions - task2 was moved, so task3 and task4 should have decremented positions
+        const updatedTask1 = sourceTasks.find(
+          (t) => t._id.toString() === task1._id.toString()
+        );
+        const updatedTask3 = sourceTasks.find(
+          (t) => t._id.toString() === task3._id.toString()
+        );
+        const updatedTask4 = sourceTasks.find(
+          (t) => t._id.toString() === task4._id.toString()
+        );
+
+        expect(updatedTask1?.position).toBe(0);
+        expect(updatedTask3?.position).toBe(1);
+        expect(updatedTask4?.position).toBe(2);
       });
     });
   });
