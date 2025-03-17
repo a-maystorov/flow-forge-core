@@ -185,17 +185,27 @@ router.delete(
   asyncHandler(async (req, res) => {
     const { taskId, columnId } = req.params;
 
-    const task = await Task.findOne({ _id: taskId, columnId });
+    const task = await Task.findOneAndDelete({ _id: taskId, columnId });
 
     if (!task) {
       throw new NotFoundError('Task not found');
     }
 
-    await task.deleteOne();
+    const deletedPosition = task.position;
+
+    await Task.updateMany(
+      {
+        columnId,
+        position: { $gt: deletedPosition },
+      },
+      {
+        $inc: { position: -1 },
+      }
+    );
 
     await Column.updateOne({ _id: columnId }, { $pull: { tasks: taskId } });
 
-    res.status(200).json(task);
+    return res.status(200).json(task);
   })
 );
 

@@ -251,6 +251,23 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
       expect(columnInDB!.tasks).not.toContain(taskId);
     });
 
+    it('should update positions of remaining tasks', async () => {
+      const task2 = new Task({ title: 'Task 2', columnId });
+      await task2.save();
+
+      const task3 = new Task({ title: 'Task 3', columnId });
+      await task3.save();
+
+      await execDelete();
+
+      const remainingTasks = await Task.find({ columnId }).sort('position');
+      expect(remainingTasks.length).toBe(2);
+      expect(remainingTasks[0]._id.toString()).toBe(task2._id.toString());
+      expect(remainingTasks[0].position).toBe(0);
+      expect(remainingTasks[1]._id.toString()).toBe(task3._id.toString());
+      expect(remainingTasks[1].position).toBe(1);
+    });
+
     it('should return the deleted task', async () => {
       const res = await execDelete();
 
