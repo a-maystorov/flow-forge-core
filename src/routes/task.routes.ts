@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { auth, validateObjectId } from '../middleware';
 import Column from '../models/column.model';
 import Task from '../models/task.model';
+import Subtask from '../models/subtask.model'; // Import Subtask model
 import { asyncHandler } from '../utils/asyncHandler';
 import { NotFoundError } from '../utils/errors';
 import subtaskRoutes from './subtask.routes';
@@ -185,11 +186,15 @@ router.delete(
   asyncHandler(async (req, res) => {
     const { taskId, columnId } = req.params;
 
-    const task = await Task.findOneAndDelete({ _id: taskId, columnId });
+    const task = await Task.findOne({ _id: taskId, columnId });
 
     if (!task) {
       throw new NotFoundError('Task not found');
     }
+
+    await Subtask.deleteMany({ taskId });
+
+    await task.deleteOne();
 
     const deletedPosition = task.position;
 

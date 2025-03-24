@@ -6,6 +6,7 @@ import Board from '../../../models/board.model';
 import Column from '../../../models/column.model';
 import Task from '../../../models/task.model';
 import User from '../../../models/user.model';
+import Subtask from '../../../models/subtask.model';
 
 describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
   let user: InstanceType<typeof User>;
@@ -26,6 +27,7 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
     await Board.deleteMany({});
     await Column.deleteMany({});
     await Task.deleteMany({});
+    await Subtask.deleteMany({});
   });
 
   const createUserAndToken = async () => {
@@ -273,6 +275,24 @@ describe('/api/boards/:boardId/columns/:columnId/tasks', () => {
 
       expect(res.body).toHaveProperty('_id', taskId.toString());
       expect(res.body).toHaveProperty('title', 'Task to delete');
+    });
+
+    it('should delete all subtasks associated with the task', async () => {
+      const subtask1 = new Subtask({ title: 'Subtask 1', taskId });
+      const subtask2 = new Subtask({ title: 'Subtask 2', taskId });
+      await subtask1.save();
+      await subtask2.save();
+
+      const subtask1Id = subtask1._id;
+      const subtask2Id = subtask2._id;
+
+      await execDelete();
+
+      const subtask1InDB = await Subtask.findById(subtask1Id);
+      const subtask2InDB = await Subtask.findById(subtask2Id);
+
+      expect(subtask1InDB).toBeNull();
+      expect(subtask2InDB).toBeNull();
     });
   });
 

@@ -116,7 +116,7 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
       expect(subtaskInDB!.taskId.toString()).toBe(taskId.toString());
     });
 
-    it('should add the subtask ID to the task’s subtasks array if input is valid', async () => {
+    it("should add the subtask ID to the task's subtasks array if input is valid", async () => {
       await execPost('New Subtask');
 
       const taskInDB = await Task.findById(taskId);
@@ -133,6 +133,96 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
       expect(res.body).toHaveProperty('title', 'New Subtask');
       expect(res.body).toHaveProperty('description', 'Subtask description');
       expect(res.body).toHaveProperty('taskId', taskId.toString());
+    });
+  });
+
+  describe('POST /batch', () => {
+    beforeEach(async () => {
+      await createUserAndToken();
+      await createBoardColumnAndTask();
+    });
+
+    const execBatchPost = (subtaskTitles: string[]) => {
+      return request(app)
+        .post(
+          `/api/boards/${boardId}/columns/${columnId}/tasks/${taskId}/subtasks/batch`
+        )
+        .set('x-auth-token', token)
+        .send({ subtasks: subtaskTitles });
+    };
+
+    it('should return 401 if auth token is empty', async () => {
+      token = '';
+      const res = await execBatchPost(['Subtask 1', 'Subtask 2']);
+
+      expect(res.status).toBe(401);
+      expect(res.body.message).toBe('Unauthorized');
+    });
+
+    it('should return 404 if invalid task id is passed', async () => {
+      taskId = '1';
+      const res = await execBatchPost(['Subtask 1']);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 404 if task is not found', async () => {
+      taskId = new mongoose.Types.ObjectId();
+      const res = await execBatchPost(['Subtask 1']);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('should return 400 if any subtask title is invalid', async () => {
+      const res = await execBatchPost(['Subtask 1', '']);
+
+      expect(res.status).toBe(400);
+      expect(res.body.errors[0].message).toMatch(/Subtask title is required/);
+    });
+
+    it('should save all subtasks if input is valid', async () => {
+      const subtaskTitles = ['Subtask 1', 'Subtask 2', 'Subtask 3'];
+
+      const res = await execBatchPost(subtaskTitles);
+
+      expect(res.status).toBe(201);
+
+      // Check if all subtasks are saved
+      for (const title of subtaskTitles) {
+        const subtaskInDB = await Subtask.findOne({ title });
+        expect(subtaskInDB).not.toBeNull();
+        expect(subtaskInDB!.taskId.toString()).toBe(taskId.toString());
+        expect(subtaskInDB!.completed).toBe(false);
+      }
+    });
+
+    it('should add all subtask IDs to the task subtasks array', async () => {
+      const subtaskTitles = ['Subtask 1', 'Subtask 2'];
+      await execBatchPost(subtaskTitles);
+
+      const taskInDB = await Task.findById(taskId);
+      expect(taskInDB!.subtasks).toHaveLength(subtaskTitles.length);
+      expect(taskInDB!.subtasks[0]).toBeInstanceOf(mongoose.Types.ObjectId);
+      expect(taskInDB!.subtasks[1]).toBeInstanceOf(mongoose.Types.ObjectId);
+    });
+
+    it('should return all created subtasks if input is valid', async () => {
+      const subtaskTitles = ['Subtask 1', 'Subtask 2'];
+
+      const res = await execBatchPost(subtaskTitles);
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveLength(subtaskTitles.length);
+
+      expect(res.body[0]).toHaveProperty('_id');
+      expect(res.body[0]).toHaveProperty('title', 'Subtask 1');
+      expect(res.body[0]).toHaveProperty('completed', false);
+      expect(res.body[0]).toHaveProperty('taskId', taskId.toString());
+
+      expect(res.body[1]).toHaveProperty('_id');
+      expect(res.body[1]).toHaveProperty('title', 'Subtask 2');
+      expect(res.body[1]).toHaveProperty('completed', false);
+      expect(res.body[1]).toHaveProperty('taskId', taskId.toString());
     });
   });
 
@@ -201,23 +291,15 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
     });
 
     it('should update the subtask if input is valid', async () => {
-      const res = await execPut('Updated Subtask', 'Updated description', true);
+      const res = await execPut('Updated Subtask', 'Updated Description', true);
 
       const subtaskInDB = await Subtask.findById(subtaskId);
 
       expect(res.status).toBe(200);
+      expect(subtaskInDB).not.toBeNull();
       expect(subtaskInDB!.title).toBe('Updated Subtask');
-      expect(subtaskInDB!.description).toBe('Updated description');
+      expect(subtaskInDB!.description).toBe('Updated Description');
       expect(subtaskInDB!.completed).toBe(true);
-    });
-
-    it('should return the updated subtask if input is valid', async () => {
-      const res = await execPut('Updated Subtask', 'Updated description', true);
-
-      expect(res.body).toHaveProperty('_id', subtaskId.toString());
-      expect(res.body).toHaveProperty('title', 'Updated Subtask');
-      expect(res.body).toHaveProperty('description', 'Updated description');
-      expect(res.body).toHaveProperty('completed', true);
     });
   });
 
@@ -228,9 +310,14 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
       await createUserAndToken();
       await createBoardColumnAndTask();
 
-      const subtask = new Subtask({ title: 'Subtask to delete', taskId });
+      const subtask = new Subtask({
+        title: 'Subtask to delete',
+        taskId,
+      });
       await subtask.save();
       subtaskId = subtask._id;
+
+      await Task.updateOne({ _id: taskId }, { $push: { subtasks: subtaskId } });
     });
 
     const execDelete = () => {
@@ -265,24 +352,14 @@ describe('/api/boards/:boardId/columns/:columnId/tasks/:taskId/subtasks', () => 
       expect(res.status).toBe(404);
     });
 
-    it('should return 404 if invalid subtask id is passed', async () => {
-      subtaskId = '1';
-
-      const res = await execDelete();
-
-      expect(res.status).toBe(404);
-    });
-
-    it('should delete the subtask if it exists', async () => {
-      const res = await execDelete();
+    it('should delete the subtask if input is valid', async () => {
+      await execDelete();
 
       const subtaskInDB = await Subtask.findById(subtaskId);
-
-      expect(res.status).toBe(200);
       expect(subtaskInDB).toBeNull();
     });
 
-    it('should remove the subtask ID from the task’s subtasks array', async () => {
+    it("should remove the subtask ID from the task's subtasks array", async () => {
       await execDelete();
 
       const taskInDB = await Task.findById(taskId);

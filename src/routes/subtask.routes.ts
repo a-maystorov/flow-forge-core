@@ -16,6 +16,10 @@ const subtaskCreationSchema = z.object({
   completed: z.boolean().default(false),
 });
 
+const batchSubtaskSchema = z.object({
+  subtasks: z.array(z.string().min(1, 'Subtask title is required')),
+});
+
 router.post(
   '/',
   auth,
@@ -36,6 +40,41 @@ router.post(
     await Task.updateOne({ _id: taskId }, { $push: { subtasks: subtask._id } });
 
     res.status(201).json(subtask);
+  })
+);
+
+router.post(
+  '/batch',
+  auth,
+  asyncHandler(async (req, res) => {
+    const { taskId } = req.params;
+
+    const task = await Task.findById(taskId);
+    if (!task) {
+      throw new NotFoundError('Task not found');
+    }
+
+    const { subtasks: subtaskTitles } = batchSubtaskSchema.parse(req.body);
+
+    const subtasksToCreate = subtaskTitles.map((title) => ({
+      taskId,
+      title,
+      description: '',
+      completed: false,
+    }));
+
+    const createdSubtasks = await Subtask.insertMany(subtasksToCreate);
+
+    await Task.updateOne(
+      { _id: taskId },
+      {
+        $push: {
+          subtasks: { $each: createdSubtasks.map((subtask) => subtask._id) },
+        },
+      }
+    );
+
+    return res.status(201).json(createdSubtasks);
   })
 );
 
