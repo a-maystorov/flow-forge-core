@@ -6,6 +6,8 @@ import { errorHandler } from './middleware';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
 import userRoutes from './routes/user.routes';
+import chatRoutes from './routes/chat.routes';
+import previewRoutes from './routes/preview.routes';
 
 dotenv.config();
 
@@ -22,6 +24,8 @@ app.use(corsMiddleware);
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/boards', boardRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/previews', previewRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello, Flow Forge Core!');
