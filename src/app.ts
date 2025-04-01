@@ -3,6 +3,7 @@ import express from 'express';
 import corsMiddleware from './config/cors';
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware';
+import aiRoutes from './routes/ai.routes';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
 import userRoutes from './routes/user.routes';
@@ -22,6 +23,7 @@ app.use(corsMiddleware);
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/boards', boardRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello, Flow Forge Core!');
