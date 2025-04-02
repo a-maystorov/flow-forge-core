@@ -73,6 +73,7 @@ router.get(
  * @desc Get a specific chat session by ID
  * @access Private
  */
+// TODO: validate sessionId. Not sure if validateRequest is necessary.
 router.get(
   '/:sessionId',
   auth,

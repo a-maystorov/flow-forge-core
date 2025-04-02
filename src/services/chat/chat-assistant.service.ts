@@ -1,18 +1,26 @@
 import { Types } from 'mongoose';
-import { socketService } from '../../config/socket';
-import {
-  AssistantService,
-  BoardSuggestion,
-  TaskImprovementSuggestion,
-} from '../ai/assistant.service';
-import { chatService } from './chat.service';
-import { ChatIntent, intentService } from './intent.service';
-import { openAIService } from '../ai/openai.service';
 import {
   ChatCompletionAssistantMessageParam,
   ChatCompletionSystemMessageParam,
   ChatCompletionUserMessageParam,
 } from 'openai/resources/chat';
+import { v4 as uuidv4 } from 'uuid';
+import { socketService } from '../../config/socket';
+import {
+  BoardSuggestion,
+  TaskBreakdownSuggestion,
+  TaskImprovementSuggestion,
+} from '../../models/suggestion.model';
+import {
+  BoardSuggestion as AIBoardSuggestion,
+  SubtaskSuggestion as AISubtaskSuggestion,
+  TaskImprovementSuggestion as AITaskImprovementSuggestion,
+  AssistantService,
+} from '../ai/assistant.service';
+import { openAIService } from '../ai/openai.service';
+import { suggestionService } from '../suggestion/suggestion.service';
+import { chatService } from './chat.service';
+import { ChatIntent, intentService } from './intent.service';
 
 interface ProcessMessageResult {
   responseMessage: {
@@ -21,18 +29,11 @@ interface ProcessMessageResult {
   detectedIntent: ChatIntent;
   suggestions: {
     boardSuggestion?: BoardSuggestion;
-    taskBreakdown?: {
-      taskTitle: string;
-      taskDescription: string;
-      subtasks: Array<{
-        title: string;
-        description: string;
-        completed: boolean;
-      }>;
-    };
+    taskBreakdown?: TaskBreakdownSuggestion;
     taskImprovement?: TaskImprovementSuggestion;
   };
   confidence: number;
+  suggestionId?: string; // New field to track created suggestions
 }
 
 /**
@@ -43,6 +44,66 @@ class ChatAssistantService {
 
   constructor() {
     this.assistantService = new AssistantService();
+  }
+
+  /**
+   * Transform AI-generated board suggestion to the database model format
+   * @param aiBoardSuggestion The AI-generated board suggestion
+   * @returns Transformed board suggestion matching the database model
+   */
+  private transformBoardSuggestion(
+    aiBoardSuggestion: AIBoardSuggestion
+  ): BoardSuggestion {
+    return {
+      boardName: aiBoardSuggestion.boardName,
+      columns: aiBoardSuggestion.columns.map((column) => ({
+        name: column.name,
+        position: column.position,
+        tasks: column.tasks.map((task) => ({
+          id: uuidv4(), // Generate a unique ID for each task
+          title: task.title,
+          description: task.description,
+          position: task.position,
+        })),
+      })),
+    };
+  }
+
+  /**
+   * Transform AI-generated task breakdown suggestion to the database model format
+   * @param aiTaskBreakdown The AI-generated task breakdown suggestion
+   * @returns Transformed task breakdown suggestion matching the database model
+   */
+  private transformTaskBreakdownSuggestion(aiTaskBreakdown: {
+    taskTitle: string;
+    taskDescription: string;
+    subtasks: AISubtaskSuggestion[];
+  }): TaskBreakdownSuggestion {
+    return {
+      taskTitle: aiTaskBreakdown.taskTitle,
+      taskDescription: aiTaskBreakdown.taskDescription,
+      subtasks: aiTaskBreakdown.subtasks.map((subtask) => ({
+        id: uuidv4(), // Generate a unique ID for each subtask
+        title: subtask.title,
+        description: subtask.description,
+        completed: subtask.completed,
+      })),
+    };
+  }
+
+  /**
+   * Transform AI-generated task improvement suggestion to the database model format
+   * @param aiImprovement The AI-generated task improvement suggestion
+   * @returns Transformed task improvement suggestion matching the database model
+   */
+  private transformTaskImprovementSuggestion(
+    aiImprovement: AITaskImprovementSuggestion
+  ): TaskImprovementSuggestion {
+    // Both interfaces have the same shape, but we transform for consistency
+    return {
+      title: aiImprovement.title,
+      description: aiImprovement.description,
+    };
   }
 
   /**
@@ -108,15 +169,47 @@ class ChatAssistantService {
               { status: 'Generating board suggestion...' }
             );
 
-            const boardSuggestion =
+            const aiSuggestion =
               await this.assistantService.generateBoardSuggestion(
                 extractedEntities.projectDescription
               );
 
-            result.suggestions.boardSuggestion = boardSuggestion ?? undefined;
-            conversationalResponse = this.formatBoardSuggestionResponse(
-              boardSuggestion!
-            );
+            if (aiSuggestion) {
+              // Get the chat session to access its userId
+              const chatSession = await chatService.getChatSession(sessionId);
+
+              if (!chatSession) {
+                throw new Error('Chat session not found');
+              }
+
+              // Transform the AI board suggestion to the format expected by the database
+              const transformedBoardSuggestion =
+                this.transformBoardSuggestion(aiSuggestion);
+
+              // Store the suggestion in the database
+              const storedSuggestion =
+                await suggestionService.createBoardSuggestion(
+                  chatSession.userId,
+                  sessionId,
+                  transformedBoardSuggestion,
+                  message
+                );
+
+              // Properly handle Mongoose ObjectId
+              const suggestionId = (
+                storedSuggestion._id as Types.ObjectId
+              ).toString();
+              result.suggestionId = suggestionId;
+              result.suggestions.boardSuggestion = transformedBoardSuggestion;
+
+              conversationalResponse = this.formatBoardSuggestionResponse(
+                transformedBoardSuggestion,
+                suggestionId
+              );
+            } else {
+              conversationalResponse =
+                "I'm sorry, I wasn't able to generate a board suggestion. Could you provide more details about your project?";
+            }
           } else {
             conversationalResponse =
               "I'd be happy to suggest a board layout for your project. Could you provide more details about what you're working on?";
@@ -137,18 +230,175 @@ class ChatAssistantService {
                 extractedEntities.taskDescription
               );
 
-            result.suggestions.taskBreakdown = taskBreakdown ?? undefined;
-            conversationalResponse = this.formatTaskBreakdownResponse(
-              taskBreakdown!
-            );
+            if (taskBreakdown) {
+              // Get the chat session to access its userId
+              const chatSession = await chatService.getChatSession(sessionId);
+
+              if (!chatSession) {
+                throw new Error('Chat session not found');
+              }
+
+              // Transform AI result to database model format
+              const transformedTaskBreakdown =
+                this.transformTaskBreakdownSuggestion(taskBreakdown);
+
+              // Store the suggestion in the database
+              const storedSuggestion =
+                await suggestionService.createTaskBreakdownSuggestion(
+                  chatSession.userId,
+                  sessionId,
+                  transformedTaskBreakdown,
+                  message
+                );
+
+              // Properly handle Mongoose ObjectId
+              const suggestionId = (
+                storedSuggestion._id as Types.ObjectId
+              ).toString();
+              result.suggestionId = suggestionId;
+              result.suggestions.taskBreakdown = transformedTaskBreakdown;
+
+              conversationalResponse = this.formatTaskBreakdownResponse(
+                transformedTaskBreakdown,
+                suggestionId
+              );
+            } else {
+              conversationalResponse =
+                "I'm sorry, I wasn't able to break down that task. Could you provide more details?";
+            }
           } else {
             conversationalResponse =
               'I can help break down a task into smaller subtasks. What task would you like me to break down?';
           }
           break;
-
+        // TODO: More tests needed for task_improvement. Check if functionality is reliable.
         case 'task_improvement':
-          if (extractedEntities.taskTitle) {
+          // Check if we're improving a specific task from a previous board suggestion
+          let relatedSuggestionId: string | undefined;
+          let taskId: string | undefined;
+          let originalTask: { title: string; description: string } | null =
+            null;
+          let columnName: string | null = null;
+
+          // If the user specified a task ID or referenced a task by title
+          if (extractedEntities.taskId) {
+            taskId = extractedEntities.taskId;
+
+            // Find the board suggestion containing this task
+            const boardSuggestion =
+              await suggestionService.findBoardSuggestionContainingTask(
+                sessionId,
+                taskId
+              );
+
+            if (boardSuggestion) {
+              // Safely convert Mongoose ObjectId to string
+              const boardSuggestionId = (
+                boardSuggestion._id as Types.ObjectId
+              ).toString();
+              relatedSuggestionId = boardSuggestionId;
+              const { task, columnName: colName } =
+                suggestionService.findTaskInBoardSuggestion(
+                  boardSuggestion.content as BoardSuggestion,
+                  taskId
+                );
+              originalTask = task;
+              columnName = colName;
+            }
+          } else if (
+            extractedEntities.taskTitle &&
+            !extractedEntities.taskDescription
+          ) {
+            // Try to find a task by title in recent board suggestions
+            const sessionSuggestions =
+              await suggestionService.getSuggestionsBySession(sessionId);
+
+            for (const suggestion of sessionSuggestions) {
+              if (suggestion.type === 'board') {
+                const boardContent = suggestion.content as BoardSuggestion;
+                for (const column of boardContent.columns) {
+                  const matchingTask = column.tasks.find((t) =>
+                    t.title
+                      .toLowerCase()
+                      .includes(extractedEntities.taskTitle!.toLowerCase())
+                  );
+
+                  if (matchingTask) {
+                    originalTask = matchingTask;
+                    columnName = column.name;
+                    // Safely convert Mongoose ObjectId to string
+                    const suggestionId = (
+                      suggestion._id as Types.ObjectId
+                    ).toString();
+                    relatedSuggestionId = suggestionId;
+                    taskId = matchingTask.id;
+                    break;
+                  }
+                }
+                if (originalTask) break;
+              }
+            }
+          }
+
+          // Now process the task improvement
+          if (originalTask) {
+            // We found a specific task to improve
+            // Emit processing update
+            socketService.emitToChatSession(
+              sessionId.toString(),
+              'processing_update',
+              { status: 'Improving specific task...' }
+            );
+
+            const taskImprovement =
+              await this.assistantService.improveTaskDescription(
+                originalTask.title,
+                originalTask.description
+              );
+
+            if (taskImprovement) {
+              // Get the chat session to access its userId
+              const chatSession = await chatService.getChatSession(sessionId);
+
+              if (!chatSession) {
+                throw new Error('Chat session not found');
+              }
+
+              // Transform AI result to database model format
+              const transformedImprovement =
+                this.transformTaskImprovementSuggestion(taskImprovement);
+
+              // Store the suggestion in the database with reference to the original
+              const storedSuggestion =
+                await suggestionService.createTaskImprovementSuggestion(
+                  chatSession.userId,
+                  sessionId,
+                  transformedImprovement,
+                  message,
+                  relatedSuggestionId,
+                  { taskId }
+                );
+
+              // Properly handle Mongoose ObjectId
+              const suggestionId = (
+                storedSuggestion._id as Types.ObjectId
+              ).toString();
+              result.suggestionId = suggestionId;
+              result.suggestions.taskImprovement = transformedImprovement;
+
+              conversationalResponse =
+                this.formatSpecificTaskImprovementResponse(
+                  originalTask.title,
+                  originalTask.description,
+                  transformedImprovement,
+                  columnName || 'a column',
+                  suggestionId
+                );
+            } else {
+              conversationalResponse = `I'm sorry, I wasn't able to improve the task "${originalTask.title}". Would you like to try again with more details?`;
+            }
+          } else if (extractedEntities.taskTitle) {
+            // General task improvement without reference to a specific previous suggestion
             // Emit processing update
             socketService.emitToChatSession(
               sessionId.toString(),
@@ -162,12 +412,44 @@ class ChatAssistantService {
                 extractedEntities.taskDescription || ''
               );
 
-            result.suggestions.taskImprovement = taskImprovement ?? undefined;
-            conversationalResponse = this.formatTaskImprovementResponse(
-              extractedEntities.taskTitle,
-              extractedEntities.taskDescription || '',
-              taskImprovement!
-            );
+            if (taskImprovement) {
+              // Get the chat session to access its userId
+              const chatSession = await chatService.getChatSession(sessionId);
+
+              if (!chatSession) {
+                throw new Error('Chat session not found');
+              }
+
+              // Transform AI result to database model format
+              const transformedImprovement =
+                this.transformTaskImprovementSuggestion(taskImprovement);
+
+              // Store the suggestion in the database
+              const storedSuggestion =
+                await suggestionService.createTaskImprovementSuggestion(
+                  chatSession.userId,
+                  sessionId,
+                  transformedImprovement,
+                  message
+                );
+
+              // Properly handle Mongoose ObjectId
+              const suggestionId = (
+                storedSuggestion._id as Types.ObjectId
+              ).toString();
+              result.suggestionId = suggestionId;
+              result.suggestions.taskImprovement = transformedImprovement;
+
+              conversationalResponse = this.formatTaskImprovementResponse(
+                extractedEntities.taskTitle,
+                extractedEntities.taskDescription || '',
+                transformedImprovement,
+                suggestionId
+              );
+            } else {
+              conversationalResponse =
+                "I'm sorry, I wasn't able to improve that task. Could you provide more details?";
+            }
           } else {
             conversationalResponse =
               'I can help improve your task title and description. What task would you like me to enhance?';
@@ -200,48 +482,38 @@ class ChatAssistantService {
       socketService.emitToChatSession(
         sessionId.toString(),
         'assistant_typing',
-        { isTyping: false }
+        {
+          isTyping: false,
+        }
       );
 
-      // Save assistant response
+      // Add the assistant response to the chat session
       const assistantMessage = await chatService.addMessage({
         sessionId,
         role: 'assistant',
-        content: result.responseMessage.content,
-        metadata: {
-          suggestedBoardId: result.suggestions.boardSuggestion
-            ? new Types.ObjectId()
-            : undefined,
-          suggestedTaskId: result.suggestions.taskBreakdown
-            ? new Types.ObjectId()
-            : undefined,
-          intent,
-          confidence,
-        },
+        content: conversationalResponse,
+        metadata: result.suggestionId
+          ? {
+              // The metadata must match the expected fields in IChatMessage
+              suggestedBoardId: result.suggestions.boardSuggestion
+                ? result.suggestionId
+                : undefined,
+              suggestedTaskId:
+                result.suggestions.taskBreakdown ||
+                result.suggestions.taskImprovement
+                  ? result.suggestionId
+                  : undefined,
+              confidence: result.confidence,
+            }
+          : undefined,
       });
 
-      // Emit new message event
+      // Emit event for real-time updates
       socketService.emitToChatSession(
         sessionId.toString(),
         'new_message',
         assistantMessage
       );
-
-      // If there are suggestions, emit them separately
-      if (Object.keys(result.suggestions).length > 0) {
-        socketService.emitToChatSession(
-          sessionId.toString(),
-          'suggestion_ready',
-          result.suggestions
-        );
-      }
-
-      // Update session with intent context
-      await chatService.updateChatSession(sessionId, {
-        context: {
-          currentIntent: intent,
-        },
-      });
 
       return result;
     } catch (error) {
@@ -251,42 +523,48 @@ class ChatAssistantService {
       socketService.emitToChatSession(
         sessionId.toString(),
         'assistant_typing',
-        { isTyping: false }
+        {
+          isTyping: false,
+        }
       );
 
-      // Save error response
-      const errorResponse =
-        "I'm having trouble processing your request right now. Please try again later.";
-
+      // Add error message to chat session
       const errorMessage = await chatService.addMessage({
         sessionId,
         role: 'assistant',
-        content: errorResponse,
+        content:
+          "I'm sorry, I encountered an error while processing your request. Please try again.",
       });
 
-      // Emit error message
+      // Emit event for real-time updates
       socketService.emitToChatSession(
         sessionId.toString(),
         'new_message',
         errorMessage
       );
 
-      result.responseMessage.content = errorResponse;
+      // Return error result
+      result.responseMessage.content =
+        "I'm sorry, I encountered an error while processing your request. Please try again.";
       return result;
     }
   }
 
   /**
-   * Format board suggestion response
-   * @param suggestion The board suggestion
-   * @returns Formatted message
+   * Format a board suggestion into a user-friendly response
+   * @param suggestion Board suggestion
+   * @param suggestionId Suggestion ID
+   * @returns Formatted response
    */
-  private formatBoardSuggestionResponse(suggestion: BoardSuggestion): string {
+  private formatBoardSuggestionResponse(
+    suggestion: BoardSuggestion,
+    suggestionId: string
+  ): string {
     let response = `Here's a board layout for "${suggestion.boardName}":\n\n`;
 
+    // Add each column
     suggestion.columns.forEach((column) => {
       response += `**${column.name}**\n`;
-
       if (column.tasks.length === 0) {
         response += 'No tasks yet\n';
       } else {
@@ -294,69 +572,100 @@ class ChatAssistantService {
           response += `- ${task.title}\n`;
         });
       }
-
       response += '\n';
     });
 
     response +=
-      '\nWould you like to use this board structure or make some changes to it?';
+      '\nWould you like to use this board structure or make some changes to it? You can accept or reject this suggestion.';
+    response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
+
     return response;
   }
 
   /**
-   * Format task breakdown response
-   * @param breakdown The task breakdown
-   * @returns Formatted message
+   * Format a task breakdown into a user-friendly response
+   * @param breakdown Task breakdown with subtasks
+   * @param suggestionId Suggestion ID
+   * @returns Formatted response
    */
-  private formatTaskBreakdownResponse(breakdown: {
-    taskTitle: string;
-    taskDescription: string;
-    subtasks: Array<{
-      title: string;
-      description: string;
-      completed: boolean;
-    }>;
-  }): string {
-    let response = `Here's how I'd break down "${breakdown.taskTitle}":\n\n`;
+  private formatTaskBreakdownResponse(
+    breakdown: TaskBreakdownSuggestion,
+    suggestionId: string
+  ): string {
+    let response = `I've broken down "${breakdown.taskTitle}" into subtasks:\n\n`;
 
     breakdown.subtasks.forEach((subtask, index) => {
       response += `${index + 1}. **${subtask.title}**\n`;
       response += `   ${subtask.description}\n\n`;
     });
 
-    response += '\nWould you like to use these subtasks or modify them?';
+    response += 'Would you like to use these subtasks or make some changes?';
+    response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
+
     return response;
   }
 
   /**
-   * Format task improvement response
+   * Format a task improvement into a user-friendly response
    * @param originalTitle Original task title
    * @param originalDescription Original task description
    * @param improvement Task improvement suggestion
-   * @returns Formatted message
+   * @param suggestionId Suggestion ID
+   * @returns Formatted response
    */
   private formatTaskImprovementResponse(
     originalTitle: string,
     originalDescription: string,
-    improvement: TaskImprovementSuggestion
+    improvement: TaskImprovementSuggestion,
+    suggestionId: string
   ): string {
-    let response = "I've improved your task:\n\n";
+    let response = `I've improved your task:\n\n`;
 
-    response += '**Original Title:**\n';
-    response += `${originalTitle}\n\n`;
+    response += `**Original Title:**\n${originalTitle}\n\n`;
+    response += `**Improved Title:**\n${improvement.title}\n\n`;
 
-    response += '**Improved Title:**\n';
-    response += `${improvement.title}\n\n`;
-
-    if (originalDescription || improvement.description) {
-      response += '**Original Description:**\n';
-      response += `${originalDescription || '(None provided)'}\n\n`;
-
-      response += '**Improved Description:**\n';
-      response += `${improvement.description}\n\n`;
+    if (originalDescription) {
+      response += `**Original Description:**\n${originalDescription}\n\n`;
     }
 
-    response += '\nWould you like to use these improvements?';
+    response += `**Improved Description:**\n${improvement.description}\n\n`;
+
+    response += 'Would you like to use these improvements?';
+    response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
+
+    return response;
+  }
+
+  /**
+   * Format a task improvement for a specific task from a board suggestion
+   * @param originalTitle Original task title
+   * @param originalDescription Original task description
+   * @param improvement Task improvement suggestion
+   * @param columnName Column name where the task exists
+   * @param suggestionId Suggestion ID
+   * @returns Formatted response
+   */
+  private formatSpecificTaskImprovementResponse(
+    originalTitle: string,
+    originalDescription: string,
+    improvement: TaskImprovementSuggestion,
+    columnName: string,
+    suggestionId: string
+  ): string {
+    let response = `I've improved the task "${originalTitle}" from the ${columnName} column:\n\n`;
+
+    response += `**Original Title:**\n${originalTitle}\n\n`;
+    response += `**Improved Title:**\n${improvement.title}\n\n`;
+
+    if (originalDescription) {
+      response += `**Original Description:**\n${originalDescription}\n\n`;
+    }
+
+    response += `**Improved Description:**\n${improvement.description}\n\n`;
+
+    response += 'Would you like to use these improvements?';
+    response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
+
     return response;
   }
 
