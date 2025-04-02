@@ -8,8 +8,8 @@ import { errorHandler } from './middleware';
 import aiRoutes from './routes/ai.routes';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
-import userRoutes from './routes/user.routes';
 import chatRoutes from './routes/chat.routes';
+import userRoutes from './routes/user.routes';
 
 dotenv.config();
 
@@ -20,10 +20,7 @@ if (process.env.NODE_ENV !== 'test') {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Create HTTP server
 const server = http.createServer(app);
-// TODO: figure out how it's all connected and refine assistant responses
-// Initialize Socket.IO
 socketService.initialize(server);
 
 app.use(express.json());
