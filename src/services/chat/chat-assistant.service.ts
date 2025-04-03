@@ -4,9 +4,10 @@ import {
   ChatCompletionSystemMessageParam,
   ChatCompletionUserMessageParam,
 } from 'openai/resources/chat';
-import { v4 as uuidv4 } from 'uuid';
 import { socketService } from '../../config/socket';
 import {
+  BaseSubtask,
+  BaseTask,
   BoardSuggestion,
   TaskBreakdownSuggestion,
   TaskImprovementSuggestion,
@@ -60,11 +61,10 @@ class ChatAssistantService {
         name: column.name,
         position: column.position,
         tasks: column.tasks.map((task) => ({
-          id: uuidv4(), // Generate a unique ID for each task
           title: task.title,
           description: task.description,
           position: task.position,
-        })),
+        })) as BaseTask[],
       })),
     };
   }
@@ -83,11 +83,10 @@ class ChatAssistantService {
       taskTitle: aiTaskBreakdown.taskTitle,
       taskDescription: aiTaskBreakdown.taskDescription,
       subtasks: aiTaskBreakdown.subtasks.map((subtask) => ({
-        id: uuidv4(), // Generate a unique ID for each subtask
         title: subtask.title,
         description: subtask.description,
         completed: subtask.completed,
-      })),
+      })) as BaseSubtask[],
     };
   }
 
@@ -99,11 +98,7 @@ class ChatAssistantService {
   private transformTaskImprovementSuggestion(
     aiImprovement: AITaskImprovementSuggestion
   ): TaskImprovementSuggestion {
-    // Both interfaces have the same shape, but we transform for consistency
-    return {
-      title: aiImprovement.title,
-      description: aiImprovement.description,
-    };
+    return aiImprovement;
   }
 
   /**
@@ -271,7 +266,6 @@ class ChatAssistantService {
               'I can help break down a task into smaller subtasks. What task would you like me to break down?';
           }
           break;
-        // TODO: More tests needed for task_improvement. Check if functionality is reliable.
         case 'task_improvement':
           // Check if we're improving a specific task from a previous board suggestion
           let relatedSuggestionId: string | undefined;

@@ -45,6 +45,7 @@ export interface SuggestionMetadata {
   boardId?: string;
   columnId?: string;
   parentTaskId?: string;
+  relatedSuggestionId?: string | Types.ObjectId;
 }
 
 export interface ISuggestion extends Document {
@@ -98,6 +99,7 @@ const SuggestionSchema = new Schema<ISuggestion>(
       boardId: String,
       columnId: String,
       parentTaskId: String,
+      relatedSuggestionId: { type: Schema.Types.ObjectId, ref: 'Suggestion' },
     },
     relatedSuggestionId: {
       type: Schema.Types.ObjectId,

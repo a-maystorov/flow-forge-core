@@ -17,7 +17,6 @@ export interface TaskSuggestion {
   title: string;
   description: string;
   position: number;
-  status: 'Todo' | 'Doing' | 'Done';
   subtasks: SubtaskSuggestion[];
 }
 
