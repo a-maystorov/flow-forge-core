@@ -1,35 +1,16 @@
+import { Types } from 'mongoose';
+import { boardAdapter } from './adapters/board-adapter';
+import { taskBreakdownAdapter } from './adapters/task-breakdown.adapter';
+import { taskImprovementAdapter } from './adapters/task-improvement.adapter';
 import { openAIService } from './openai.service';
-import { promptService } from './prompt.service';
+import { BoardSuggestion, TaskBreakdown, TaskImprovement } from './templates';
 
-// Interfaces for AI-generated suggestions
-export interface BoardSuggestion {
-  boardName: string;
-  columns: ColumnSuggestion[];
-}
+// Ensure templates are registered
+import './templates';
 
-export interface ColumnSuggestion {
-  name: string;
-  position: number;
-  tasks: TaskSuggestion[];
-}
-
-export interface TaskSuggestion {
-  title: string;
-  description: string;
-  position: number;
-  subtasks: SubtaskSuggestion[];
-}
-
-export interface SubtaskSuggestion {
-  title: string;
-  description: string;
-  completed: boolean;
-}
-
-export interface TaskImprovementSuggestion {
-  title: string;
-  description: string;
-}
+// Re-export interfaces for backward compatibility
+export { BoardSuggestion } from './templates/board-suggestion.template';
+export { TaskImprovement as TaskImprovementSuggestion } from './templates/task-improvement.template';
 
 /**
  * Service for AI assistant functionality related to flow-forge boards
@@ -44,28 +25,18 @@ export class AssistantService {
     projectDescription: string
   ): Promise<BoardSuggestion | null> {
     try {
-      const messages = [
-        promptService.generateSystemPrompt(),
-        promptService.generateBoardCreationPrompt(projectDescription),
-      ];
+      // Generate board suggestion using template
+      const response =
+        await openAIService.generateFromTemplate<BoardSuggestion>(
+          'board-suggestion',
+          { projectDescription },
+          {
+            temperature: 0.7,
+            maxTokens: 2000,
+          }
+        );
 
-      const completion = await openAIService.generateChatCompletion(messages, {
-        temperature: 0.7,
-        maxTokens: 2000,
-      });
-
-      const content = openAIService.extractContent(completion);
-      if (!content) return null;
-
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return null;
-
-        return JSON.parse(jsonMatch[0]) as BoardSuggestion;
-      } catch (error) {
-        console.error('Error parsing AI response as JSON:', error);
-        return null;
-      }
+      return response;
     } catch (error) {
       console.error('Error generating board suggestion:', error);
       return null;
@@ -73,46 +44,85 @@ export class AssistantService {
   }
 
   /**
+   * Generate a board document with columns and tasks from a project description
+   *
+   * @param projectDescription Description of the project
+   * @param ownerId ID of the user creating the board
+   * @returns Board document with columns and tasks ready for database insertion
+   */
+  async generateBoardDocument(
+    projectDescription: string,
+    ownerId: string | Types.ObjectId
+  ) {
+    const suggestion = await this.generateBoardSuggestion(projectDescription);
+
+    if (!suggestion) {
+      throw new Error('Failed to generate board suggestion');
+    }
+
+    // Transform the AI response into application models
+    return boardAdapter.toBoardDocument(suggestion, ownerId);
+  }
+
+  /**
    * Break down a task into subtasks
+   * @param taskTitle Title of the task to break down
    * @param taskDescription Description of the task to break down
    * @returns Suggested subtasks
    */
-  async generateTaskBreakdown(taskDescription: string): Promise<{
-    taskTitle: string;
-    taskDescription: string;
-    subtasks: SubtaskSuggestion[];
-  } | null> {
+  async generateTaskBreakdown(
+    taskTitle: string,
+    taskDescription?: string
+  ): Promise<TaskBreakdown | null> {
     try {
-      const messages = [
-        promptService.generateSystemPrompt(),
-        promptService.generateTaskBreakdownPrompt(taskDescription),
-      ];
+      // Prepare variables based on what's provided
+      const variables: Record<string, string> = {
+        taskTitle,
+      };
 
-      const completion = await openAIService.generateChatCompletion(messages, {
-        temperature: 0.7,
-        maxTokens: 1500,
-      });
-
-      const content = openAIService.extractContent(completion);
-      if (!content) return null;
-
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return null;
-
-        return JSON.parse(jsonMatch[0]) as {
-          taskTitle: string;
-          taskDescription: string;
-          subtasks: SubtaskSuggestion[];
-        };
-      } catch (error) {
-        console.error('Error parsing AI response as JSON:', error);
-        return null;
+      if (taskDescription) {
+        variables.taskDescription = taskDescription;
       }
+
+      // Generate task breakdown using template
+      const response = await openAIService.generateFromTemplate<TaskBreakdown>(
+        'task-breakdown',
+        variables,
+        {
+          temperature: 0.7,
+          maxTokens: 1500,
+        }
+      );
+
+      return response;
     } catch (error) {
       console.error('Error generating task breakdown:', error);
       return null;
     }
+  }
+
+  /**
+   * Generate a task breakdown suggestion with database-friendly format
+   *
+   * @param taskTitle Title of the task to break down
+   * @param taskDescription Description of the task to break down (optional)
+   * @returns Task breakdown suggestion ready for database insertion
+   */
+  async generateTaskBreakdownSuggestion(
+    taskTitle: string,
+    taskDescription?: string
+  ) {
+    const breakdown = await this.generateTaskBreakdown(
+      taskTitle,
+      taskDescription
+    );
+
+    if (!breakdown) {
+      throw new Error('Failed to generate task breakdown');
+    }
+
+    // Transform the AI response into an application model
+    return taskBreakdownAdapter.toSuggestionModel(breakdown);
   }
 
   /**
@@ -124,34 +134,57 @@ export class AssistantService {
   async improveTaskDescription(
     taskTitle: string,
     taskDescription?: string
-  ): Promise<TaskImprovementSuggestion | null> {
+  ): Promise<TaskImprovement | null> {
     try {
-      const messages = [
-        promptService.generateSystemPrompt(),
-        promptService.generateTaskImprovementPrompt(taskTitle, taskDescription),
-      ];
+      // Prepare variables based on what's provided
+      const variables: Record<string, string> = {
+        taskTitle,
+      };
 
-      const completion = await openAIService.generateChatCompletion(messages, {
-        temperature: 0.7,
-        maxTokens: 1000,
-      });
-
-      const content = openAIService.extractContent(completion);
-      if (!content) return null;
-
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) return null;
-
-        return JSON.parse(jsonMatch[0]) as TaskImprovementSuggestion;
-      } catch (error) {
-        console.error('Error parsing AI response as JSON:', error);
-        return null;
+      if (taskDescription) {
+        variables.taskDescription = taskDescription;
       }
+
+      // Generate task improvement using template
+      const response =
+        await openAIService.generateFromTemplate<TaskImprovement>(
+          'task-improvement',
+          variables,
+          {
+            temperature: 0.7,
+            maxTokens: 1000,
+          }
+        );
+
+      return response;
     } catch (error) {
       console.error('Error improving task description:', error);
       return null;
     }
+  }
+
+  /**
+   * Generate a task improvement suggestion with database-friendly format
+   *
+   * @param taskTitle Current task title
+   * @param taskDescription Current task description (optional)
+   * @returns Task improvement suggestion ready for database insertion
+   */
+  async generateTaskImprovementSuggestion(
+    taskTitle: string,
+    taskDescription?: string
+  ) {
+    const improvement = await this.improveTaskDescription(
+      taskTitle,
+      taskDescription
+    );
+
+    if (!improvement) {
+      throw new Error('Failed to generate task improvement');
+    }
+
+    // Transform the AI response into an application model
+    return taskImprovementAdapter.toSuggestionModel(improvement);
   }
 }
 

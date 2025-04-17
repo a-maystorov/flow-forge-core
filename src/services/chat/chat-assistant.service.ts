@@ -6,19 +6,20 @@ import {
 } from 'openai/resources/chat';
 import { socketService } from '../../config/socket';
 import {
-  BaseSubtask,
-  BaseTask,
   BoardSuggestion,
   TaskBreakdownSuggestion,
   TaskImprovementSuggestion,
 } from '../../models/suggestion.model';
+import { boardAdapter } from '../ai/adapters/board.adapter';
+import { taskBreakdownAdapter } from '../ai/adapters/task-breakdown.adapter';
+import { taskImprovementAdapter } from '../ai/adapters/task-improvement.adapter';
 import {
   BoardSuggestion as AIBoardSuggestion,
-  SubtaskSuggestion as AISubtaskSuggestion,
   TaskImprovementSuggestion as AITaskImprovementSuggestion,
   AssistantService,
 } from '../ai/assistant.service';
 import { openAIService } from '../ai/openai.service';
+import { SubtaskSuggestion as AISubtaskSuggestion } from '../ai/templates/board-suggestion.template';
 import { suggestionService } from '../suggestion/suggestion.service';
 import { chatService } from './chat.service';
 import { ChatIntent, intentService } from './intent.service';
@@ -55,18 +56,7 @@ class ChatAssistantService {
   private transformBoardSuggestion(
     aiBoardSuggestion: AIBoardSuggestion
   ): BoardSuggestion {
-    return {
-      boardName: aiBoardSuggestion.boardName,
-      columns: aiBoardSuggestion.columns.map((column) => ({
-        name: column.name,
-        position: column.position,
-        tasks: column.tasks.map((task) => ({
-          title: task.title,
-          description: task.description,
-          position: task.position,
-        })) as BaseTask[],
-      })),
-    };
+    return boardAdapter.toSuggestionModel(aiBoardSuggestion);
   }
 
   /**
@@ -75,19 +65,13 @@ class ChatAssistantService {
    * @returns Transformed task breakdown suggestion matching the database model
    */
   private transformTaskBreakdownSuggestion(aiTaskBreakdown: {
-    taskTitle: string;
-    taskDescription: string;
+    task: {
+      title: string;
+      description: string;
+    };
     subtasks: AISubtaskSuggestion[];
   }): TaskBreakdownSuggestion {
-    return {
-      taskTitle: aiTaskBreakdown.taskTitle,
-      taskDescription: aiTaskBreakdown.taskDescription,
-      subtasks: aiTaskBreakdown.subtasks.map((subtask) => ({
-        title: subtask.title,
-        description: subtask.description,
-        completed: subtask.completed,
-      })) as BaseSubtask[],
-    };
+    return taskBreakdownAdapter.toSuggestionModel(aiTaskBreakdown);
   }
 
   /**
@@ -98,7 +82,7 @@ class ChatAssistantService {
   private transformTaskImprovementSuggestion(
     aiImprovement: AITaskImprovementSuggestion
   ): TaskImprovementSuggestion {
-    return aiImprovement;
+    return taskImprovementAdapter.toSuggestionModel(aiImprovement);
   }
 
   /**
@@ -527,7 +511,7 @@ class ChatAssistantService {
         sessionId,
         role: 'assistant',
         content:
-          "I'm sorry, I encountered an error while processing your request. Please try again.",
+          'I encountered an error while processing your request. Please try again.',
       });
 
       // Emit event for real-time updates
@@ -539,7 +523,7 @@ class ChatAssistantService {
 
       // Return error result
       result.responseMessage.content =
-        "I'm sorry, I encountered an error while processing your request. Please try again.";
+        'I encountered an error while processing your request. Please try again.';
       return result;
     }
   }
@@ -741,7 +725,7 @@ Keep responses helpful, clear, and concise.`,
         );
       }
 
-      return "I apologize, but I'm having trouble processing your request right now.";
+      return 'I apologize, but I am having trouble processing your request right now.';
     } catch (error) {
       console.error('Error generating conversational response:', error);
       return 'I encountered an error while generating a response. Please try again.';

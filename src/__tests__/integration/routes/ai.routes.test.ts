@@ -157,9 +157,10 @@ describe('/api/ai', () => {
 
     it('should return 200 with subtasks if successful', async () => {
       const mockTaskBreakdown = {
-        taskTitle: 'Login Feature',
-        taskDescription:
-          'Implement user authentication with email and password',
+        task: {
+          title: 'Login Feature',
+          description: 'Implement user authentication with email and password',
+        },
         subtasks: [
           {
             title: 'Design login form',

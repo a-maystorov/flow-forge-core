@@ -9,6 +9,7 @@ import { IChatMessage } from '../models/chat-message.model';
 import { IChatSession } from '../models/chat-session.model';
 import { IColumn } from '../models/column.model';
 import { ISuggestion } from '../models/suggestion.model';
+import { ISubtask } from '../models/subtask.model';
 import { ITask } from '../models/task.model';
 import { IUser } from '../models/user.model';
 
@@ -39,6 +40,7 @@ export type UserDocument = MongoDocument<IUser> & {
 export type BoardDocument = MongoDocument<IBoard>;
 export type ColumnDocument = MongoDocument<IColumn>;
 export type TaskDocument = MongoDocument<ITask>;
+export type SubtaskDocument = MongoDocument<ISubtask>;
 export type SuggestionDocument = MongoDocument<ISuggestion>;
 export type ChatSessionDocument = MongoDocument<IChatSession>;
 export type ChatMessageDocument = MongoDocument<IChatMessage>;
