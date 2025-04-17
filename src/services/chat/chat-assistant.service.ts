@@ -34,7 +34,7 @@ interface ProcessMessageResult {
     taskImprovement?: TaskImprovementSuggestion;
   };
   confidence: number;
-  suggestionId?: string; // New field to track created suggestions
+  suggestionId?: string;
 }
 
 /**
@@ -280,7 +280,7 @@ class ChatAssistantService {
 
             // Find the board suggestion containing this task
             const boardSuggestion =
-              await suggestionService.findBoardSuggestionContainingTask(
+              await suggestionService.findBoardSuggestionByTaskId(
                 sessionId,
                 taskId
               );

@@ -3,6 +3,12 @@ import Board from '../../models/board.model';
 import Column from '../../models/column.model';
 import Task from '../../models/task.model';
 import { BoardSuggestion } from '../../models/suggestion.model';
+import {
+  BoardDocument,
+  ColumnDocument,
+  TaskDocument,
+  toObjectId,
+} from '../../types/mongoose';
 
 class BoardService {
   /**
@@ -12,13 +18,12 @@ class BoardService {
     userId: string | Types.ObjectId,
     boardSuggestion: BoardSuggestion
   ): Promise<{
-    board: InstanceType<typeof Board>;
-    columns: InstanceType<typeof Column>[];
-    tasks: InstanceType<typeof Task>[];
+    board: BoardDocument;
+    columns: ColumnDocument[];
+    tasks: TaskDocument[];
   }> {
     // Convert userId to ObjectId if it's a string
-    const userObjectId =
-      typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
+    const userObjectId = toObjectId(userId);
 
     try {
       // 1. Create the board
@@ -31,8 +36,8 @@ class BoardService {
       await board.save();
 
       // 2. Create columns
-      const columns: InstanceType<typeof Column>[] = [];
-      const tasks: InstanceType<typeof Task>[] = [];
+      const columns: ColumnDocument[] = [];
+      const tasks: TaskDocument[] = [];
 
       for (let i = 0; i < boardSuggestion.columns.length; i++) {
         const columnData = boardSuggestion.columns[i];
@@ -88,8 +93,11 @@ class BoardService {
   /**
    * Get a board by ID
    */
-  async getBoardById(boardId: string | Types.ObjectId) {
-    return Board.findById(boardId).populate({
+  async getBoardById(
+    boardId: string | Types.ObjectId
+  ): Promise<BoardDocument | null> {
+    const id = toObjectId(boardId);
+    return Board.findById(id).populate({
       path: 'columns',
       populate: {
         path: 'tasks',

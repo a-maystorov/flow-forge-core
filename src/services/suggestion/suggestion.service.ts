@@ -6,7 +6,7 @@ import {
   TaskBreakdownSuggestion,
   TaskImprovementSuggestion,
 } from '../../models/suggestion.model';
-import { SuggestionDocument } from '../../types';
+import { SuggestionDocument, toObjectId } from '../../types/mongoose';
 import { boardService } from '../board/board.service';
 import { chatService } from '../chat/chat.service';
 
@@ -21,8 +21,8 @@ class SuggestionService {
     originalMessage: string
   ): Promise<SuggestionDocument> {
     const suggestion = new Suggestion({
-      userId,
-      sessionId,
+      userId: toObjectId(userId),
+      sessionId: toObjectId(sessionId),
       type: 'board',
       status: SuggestionStatus.PENDING,
       content,
@@ -30,7 +30,7 @@ class SuggestionService {
     });
 
     await suggestion.save();
-    return suggestion as SuggestionDocument;
+    return suggestion as unknown as SuggestionDocument;
   }
 
   /**
@@ -43,8 +43,8 @@ class SuggestionService {
     originalMessage: string
   ): Promise<SuggestionDocument> {
     const suggestion = new Suggestion({
-      userId,
-      sessionId,
+      userId: toObjectId(userId),
+      sessionId: toObjectId(sessionId),
       type: 'task-breakdown',
       status: SuggestionStatus.PENDING,
       content,
@@ -52,7 +52,7 @@ class SuggestionService {
     });
 
     await suggestion.save();
-    return suggestion as SuggestionDocument;
+    return suggestion as unknown as SuggestionDocument;
   }
 
   /**
@@ -67,28 +67,29 @@ class SuggestionService {
     metadata?: { taskId?: string }
   ): Promise<SuggestionDocument> {
     const suggestion = new Suggestion({
-      userId,
-      sessionId,
+      userId: toObjectId(userId),
+      sessionId: toObjectId(sessionId),
       type: 'task-improvement',
       status: SuggestionStatus.PENDING,
       content,
       originalMessage,
-      relatedSuggestionId,
+      relatedSuggestionId: relatedSuggestionId
+        ? toObjectId(relatedSuggestionId)
+        : undefined,
       metadata,
     });
 
     await suggestion.save();
-    return suggestion as SuggestionDocument;
+    return suggestion as unknown as SuggestionDocument;
   }
 
   /**
    * Get a suggestion by ID
    */
   async getSuggestion(
-    suggestionId: string
+    suggestionId: string | Types.ObjectId
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(suggestionId);
-    return suggestion as SuggestionDocument | null;
+    return Suggestion.findById(toObjectId(suggestionId));
   }
 
   /**
@@ -97,8 +98,9 @@ class SuggestionService {
   async getSuggestionsByUser(
     userId: string | Types.ObjectId
   ): Promise<SuggestionDocument[]> {
-    const suggestions = await Suggestion.find({ userId });
-    return suggestions as SuggestionDocument[];
+    return Suggestion.find({
+      userId: toObjectId(userId),
+    }) as unknown as SuggestionDocument[];
   }
 
   /**
@@ -107,10 +109,9 @@ class SuggestionService {
   async getSuggestionsBySession(
     sessionId: string | Types.ObjectId
   ): Promise<SuggestionDocument[]> {
-    const suggestions = await Suggestion.find({ sessionId }).sort({
+    return Suggestion.find({ sessionId: toObjectId(sessionId) }).sort({
       createdAt: -1,
-    });
-    return suggestions as SuggestionDocument[];
+    }) as unknown as SuggestionDocument[];
   }
 
   /**
@@ -119,21 +120,20 @@ class SuggestionService {
   async getPendingSuggestionsBySession(
     sessionId: string | Types.ObjectId
   ): Promise<SuggestionDocument[]> {
-    const suggestions = await Suggestion.find({
-      sessionId,
+    return Suggestion.find({
+      sessionId: toObjectId(sessionId),
       status: SuggestionStatus.PENDING,
-    }).sort({ createdAt: -1 });
-    return suggestions as SuggestionDocument[];
+    }).sort({ createdAt: -1 }) as unknown as SuggestionDocument[];
   }
 
   /**
    * Accept a suggestion
    */
   async acceptSuggestion(
-    suggestionId: string,
+    suggestionId: string | Types.ObjectId,
     messageContent?: string
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(suggestionId);
+    const suggestion = await Suggestion.findById(toObjectId(suggestionId));
 
     if (!suggestion) {
       return null;
@@ -158,10 +158,6 @@ class SuggestionService {
         }
         suggestion.metadata.boardId = result.board._id.toString();
         await suggestion.save();
-
-        console.log(
-          `Board created from suggestion: ${result.board.name} with ${result.columns.length} columns and ${result.tasks.length} tasks`
-        );
       } else if (suggestion.type === 'task-breakdown') {
         // TODO: Implement task breakdown handling
         // This would create a task with subtasks
@@ -192,17 +188,17 @@ class SuggestionService {
     }
 
     // Return the updated suggestion
-    return suggestion as SuggestionDocument;
+    return suggestion as unknown as SuggestionDocument;
   }
 
   /**
    * Reject a suggestion
    */
   async rejectSuggestion(
-    suggestionId: string,
+    suggestionId: string | Types.ObjectId,
     messageContent?: string
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(suggestionId);
+    const suggestion = await Suggestion.findById(toObjectId(suggestionId));
 
     if (!suggestion) {
       return null;
@@ -227,28 +223,33 @@ class SuggestionService {
       });
     }
 
-    return suggestion as SuggestionDocument;
+    return suggestion as unknown as SuggestionDocument;
   }
 
   /**
-   * Modify a suggestion
+   * Modify a suggestion's content
    */
   async modifySuggestion(
-    suggestionId: string,
+    suggestionId: string | Types.ObjectId,
     content: Partial<
       BoardSuggestion | TaskBreakdownSuggestion | TaskImprovementSuggestion
     >,
     messageContent?: string
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(suggestionId);
+    const suggestion = await Suggestion.findById(toObjectId(suggestionId));
 
     if (!suggestion) {
       return null;
     }
 
-    // Update the content with the modifications
-    suggestion.content = { ...suggestion.content, ...content };
+    // Update the content with new values
+    suggestion.content = {
+      ...suggestion.content,
+      ...content,
+    };
+
     suggestion.status = SuggestionStatus.MODIFIED;
+
     await suggestion.save();
 
     // If message content is provided, add a new message to the chat session
@@ -267,7 +268,31 @@ class SuggestionService {
       });
     }
 
-    return suggestion as SuggestionDocument;
+    return suggestion as unknown as SuggestionDocument;
+  }
+
+  /**
+   * Find a board suggestion containing a specific task
+   */
+  async findBoardSuggestionByTaskId(
+    sessionId: string | Types.ObjectId,
+    taskId: string
+  ): Promise<SuggestionDocument | null> {
+    const boardSuggestions = await Suggestion.find({
+      sessionId: toObjectId(sessionId),
+      type: 'board',
+    });
+
+    for (const suggestion of boardSuggestions) {
+      const boardSuggestion = suggestion.content as BoardSuggestion;
+      for (const column of boardSuggestion.columns) {
+        if (column.tasks.some((task) => task.id === taskId)) {
+          return suggestion as unknown as SuggestionDocument;
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -287,30 +312,6 @@ class SuggestionService {
       }
     }
     return { task: null, columnName: null };
-  }
-
-  /**
-   * Find a board suggestion that contains a specific task
-   */
-  async findBoardSuggestionContainingTask(
-    sessionId: string | Types.ObjectId,
-    taskId: string
-  ): Promise<SuggestionDocument | null> {
-    const boardSuggestions = (await Suggestion.find({
-      sessionId,
-      type: 'board',
-    })) as SuggestionDocument[];
-
-    for (const suggestion of boardSuggestions) {
-      const boardSuggestion = suggestion.content as BoardSuggestion;
-      for (const column of boardSuggestion.columns) {
-        if (column.tasks.some((task) => task.id === taskId)) {
-          return suggestion as SuggestionDocument;
-        }
-      }
-    }
-
-    return null;
   }
 }
 

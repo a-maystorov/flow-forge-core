@@ -1,36 +1,57 @@
 /**
- * TODO: Refactor all Mongoose document type references:
- * 1. Replace InstanceType<typeof Model> with Models.ModelDocument
- * 2. Replace manual type casts (Document & IModel & {...}) with Models.ModelDocument
- * 3. Update type assertions to use the Models namespace
- * 4. Add any missing model interfaces to this file
- *
- * Examples:
- * - Before: let user: InstanceType<typeof User>;
- * - After:  let user: Models.UserDocument;
- *
- * - Before: (await Task.findById(id)) as TaskDocument
- * - After:  await Task.findById(id) as Models.TaskDocument
+ * MongoDB document type definitions for Flow Forge
+ * Provides centralized document types for all models
  */
 
-import { Document, Types } from 'mongoose';
+import { Document, Model, Types } from 'mongoose';
 import { IBoard } from '../models/board.model';
+import { IChatMessage } from '../models/chat-message.model';
+import { IChatSession } from '../models/chat-session.model';
 import { IColumn } from '../models/column.model';
 import { ISuggestion } from '../models/suggestion.model';
 import { ITask } from '../models/task.model';
+import { IUser } from '../models/user.model';
 
 /**
  * Document type utility - creates a proper MongoDB document type from a model interface
  * Automatically includes _id and timestamp fields from MongoDB
+ *
+ * The Document<unknown, object, T> pattern ensures compatibility with Mongoose's document return types
  */
-export type MongoDocument<T> = T &
-  Document & {
-    _id: Types.ObjectId | string;
-    createdAt: Date;
-    updatedAt: Date;
+export type MongoDocument<T> = Document<unknown, object, T> &
+  T & {
+    _id: Types.ObjectId;
+    createdAt?: Date;
+    updatedAt?: Date;
   };
 
-export type SuggestionDocument = MongoDocument<ISuggestion>;
+/**
+ * Centralized model document types
+ * This provides a single source of truth for document types
+ */
+
+// Model document types
+export type UserDocument = MongoDocument<IUser> & {
+  generateAuthToken(): string;
+  convertToRegisteredUser(email: string, password: string): Promise<void>;
+};
+
 export type BoardDocument = MongoDocument<IBoard>;
 export type ColumnDocument = MongoDocument<IColumn>;
 export type TaskDocument = MongoDocument<ITask>;
+export type SuggestionDocument = MongoDocument<ISuggestion>;
+export type ChatSessionDocument = MongoDocument<IChatSession>;
+export type ChatMessageDocument = MongoDocument<IChatMessage>;
+
+// Model static types
+export interface UserModel
+  extends Model<IUser, Record<string, never>, UserDocument> {
+  cleanupExpiredGuests(): Promise<void>;
+}
+
+/**
+ * Utility for safely converting IDs to ObjectId
+ */
+export const toObjectId = (id: string | Types.ObjectId): Types.ObjectId => {
+  return typeof id === 'string' ? new Types.ObjectId(id) : id;
+};
