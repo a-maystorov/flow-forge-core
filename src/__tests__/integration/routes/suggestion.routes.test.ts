@@ -6,6 +6,7 @@ import app from '../../../app';
 jest.mock('../../../config/socket', () => ({
   socketService: {
     emitToChatSession: jest.fn(),
+    initialize: jest.fn(),
   },
 }));
 
@@ -86,11 +87,11 @@ describe('/api/suggestions', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should return 400 if ID is invalid', async () => {
+    it('should return 404 if ID is invalid', async () => {
       const res = await request(app)
         .get('/api/suggestions/invalid-id')
         .set('x-auth-token', token);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
 
     it('should return 404 if suggestion with given ID is not found', async () => {
@@ -139,11 +140,11 @@ describe('/api/suggestions', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should return 400 if session ID is invalid', async () => {
+    it('should return 404 if session ID is invalid', async () => {
       const res = await request(app)
         .get('/api/suggestions/session/invalid-id')
         .set('x-auth-token', token);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
 
     it('should return 200 with session suggestions', async () => {
@@ -166,11 +167,11 @@ describe('/api/suggestions', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should return 400 if ID is invalid', async () => {
+    it('should return 404 if ID is invalid', async () => {
       const res = await request(app)
         .post('/api/suggestions/invalid-id/accept')
         .set('x-auth-token', token);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
 
     it('should return 404 if suggestion with given ID is not found', async () => {
@@ -206,11 +207,11 @@ describe('/api/suggestions', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should return 400 if ID is invalid', async () => {
+    it('should return 404 if ID is invalid', async () => {
       const res = await request(app)
         .post('/api/suggestions/invalid-id/reject')
         .set('x-auth-token', token);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
 
     it('should return 404 if suggestion with given ID is not found', async () => {
@@ -247,11 +248,11 @@ describe('/api/suggestions', () => {
       expect(res.status).toBe(401);
     });
 
-    it('should return 400 if ID is invalid', async () => {
+    it('should return 404 if ID is invalid', async () => {
       const res = await request(app)
         .put('/api/suggestions/invalid-id')
         .set('x-auth-token', token);
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
     });
 
     it('should return 404 if suggestion with given ID is not found', async () => {

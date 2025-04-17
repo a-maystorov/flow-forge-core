@@ -9,7 +9,7 @@ router.get('/:id', auth, validateObjectId('id'), (req, res) =>
   suggestionController.getSuggestion(req, res)
 );
 
-router.get('/user/all', auth, validateObjectId('id'), (req, res) =>
+router.get('/user/all', auth, (req, res) =>
   suggestionController.getSuggestionsByUser(req, res)
 );
 router.get(
