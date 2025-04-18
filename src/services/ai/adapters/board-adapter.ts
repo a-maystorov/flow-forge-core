@@ -6,8 +6,8 @@ import { Types } from 'mongoose';
 import {
   BoardDocument,
   ColumnDocument,
-  TaskDocument,
   SubtaskDocument,
+  TaskDocument,
 } from '../../../types/mongoose';
 import { BoardSuggestion } from '../templates/board-suggestion.template';
 

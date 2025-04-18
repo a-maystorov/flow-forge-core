@@ -8,8 +8,8 @@ import { IBoard } from '../models/board.model';
 import { IChatMessage } from '../models/chat-message.model';
 import { IChatSession } from '../models/chat-session.model';
 import { IColumn } from '../models/column.model';
-import { ISuggestion } from '../models/suggestion.model';
 import { ISubtask } from '../models/subtask.model';
+import { ISuggestion } from '../models/suggestion.model';
 import { ITask } from '../models/task.model';
 import { IUser } from '../models/user.model';
 

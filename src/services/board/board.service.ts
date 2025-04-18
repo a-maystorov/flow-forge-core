@@ -1,8 +1,8 @@
 import { Types } from 'mongoose';
 import Board from '../../models/board.model';
 import Column from '../../models/column.model';
-import Task from '../../models/task.model';
 import { BoardSuggestion } from '../../models/suggestion.model';
+import Task from '../../models/task.model';
 import {
   BoardDocument,
   ColumnDocument,

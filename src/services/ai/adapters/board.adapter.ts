@@ -2,9 +2,11 @@
  * Adapter to transform AI board suggestion responses into suggestion model objects
  */
 
-import { BoardSuggestion as SuggestionBoardType } from '../../../models/suggestion.model';
+import {
+  BaseTask,
+  BoardSuggestion as SuggestionBoardType,
+} from '../../../models/suggestion.model';
 import { BoardSuggestion } from '../templates/board-suggestion.template';
-import { BaseTask } from '../../../models/suggestion.model';
 
 /**
  * Adapter for board suggestions
