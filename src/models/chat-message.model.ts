@@ -1,17 +1,20 @@
 import mongoose, { Schema, Types } from 'mongoose';
 
+export interface ChatMessageMetadata {
+  suggestedBoardId?: Types.ObjectId;
+  suggestedTaskId?: Types.ObjectId;
+  suggestedColumnId?: Types.ObjectId;
+  intent?: string;
+  confidence?: number;
+  [key: string]: unknown; // For any other properties that might be added
+}
+
 export interface IChatMessage {
   sessionId: Types.ObjectId;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
-  metadata?: {
-    suggestedBoardId?: Types.ObjectId;
-    suggestedTaskId?: Types.ObjectId;
-    suggestedColumnId?: Types.ObjectId;
-    intent?: string;
-    confidence?: number;
-  };
+  metadata?: ChatMessageMetadata;
 }
 
 const ChatMessageSchema: Schema = new Schema({
