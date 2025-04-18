@@ -102,7 +102,7 @@ class BoardService {
       populate: {
         path: 'tasks',
       },
-    });
+    }) as Promise<BoardDocument | null>;
   }
 }
 

@@ -36,8 +36,15 @@ export interface TaskBreakdownSuggestion {
 }
 
 export interface TaskImprovementSuggestion {
-  title: string;
-  description: string;
+  originalTask: {
+    title: string;
+    description: string;
+  };
+  improvedTask: {
+    title: string;
+    description: string;
+  };
+  reasoning: string;
 }
 
 export interface SuggestionMetadata {

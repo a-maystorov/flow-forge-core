@@ -1,6 +1,13 @@
 import { Types } from 'mongoose';
-import ChatMessage, { IChatMessage } from '../../models/chat-message.model';
-import ChatSession, { IChatSession } from '../../models/chat-session.model';
+import ChatMessage, {
+  ChatMessageMetadata,
+} from '../../models/chat-message.model';
+import ChatSession from '../../models/chat-session.model';
+import {
+  ChatMessageDocument,
+  ChatSessionDocument,
+  toObjectId,
+} from '../../types/mongoose';
 
 // Chat session creation options
 interface CreateChatSessionOptions {
@@ -15,13 +22,7 @@ interface CreateMessageOptions {
   sessionId: Types.ObjectId | string;
   role: 'user' | 'assistant' | 'system';
   content: string;
-  metadata?: {
-    suggestedBoardId?: Types.ObjectId | string;
-    suggestedTaskId?: Types.ObjectId | string;
-    suggestedColumnId?: Types.ObjectId | string;
-    intent?: string;
-    confidence?: number;
-  };
+  metadata?: ChatMessageMetadata;
 }
 
 /**
@@ -35,11 +36,11 @@ class ChatService {
    */
   async createChatSession(
     options: CreateChatSessionOptions
-  ): Promise<IChatSession> {
+  ): Promise<ChatSessionDocument> {
     const { userId, title, boardId, taskId } = options;
 
     const chatSession = new ChatSession({
-      userId,
+      userId: toObjectId(userId),
       title: title || 'New Conversation',
       context: {
         boardId,
@@ -58,8 +59,10 @@ class ChatService {
    */
   async getChatSession(
     sessionId: Types.ObjectId | string
-  ): Promise<IChatSession | null> {
-    return ChatSession.findById(sessionId);
+  ): Promise<ChatSessionDocument | null> {
+    return (await ChatSession.findById(
+      toObjectId(sessionId)
+    )) as ChatSessionDocument | null;
   }
 
   /**
@@ -73,16 +76,18 @@ class ChatService {
     userId: Types.ObjectId | string,
     limit = 10,
     status: 'active' | 'archived' | 'all' = 'active'
-  ): Promise<IChatSession[]> {
-    const query: { userId: Types.ObjectId | string; status?: string } = {
-      userId,
+  ): Promise<ChatSessionDocument[]> {
+    const query: { userId: Types.ObjectId; status?: string } = {
+      userId: toObjectId(userId),
     };
 
     if (status !== 'all') {
       query.status = status;
     }
 
-    return ChatSession.find(query).sort({ lastActive: -1 }).limit(limit);
+    return (await ChatSession.find(query)
+      .sort({ lastActive: -1 })
+      .limit(limit)) as ChatSessionDocument[];
   }
 
   /**
@@ -93,13 +98,13 @@ class ChatService {
    */
   async updateChatSession(
     sessionId: Types.ObjectId | string,
-    updates: Partial<Omit<IChatSession, '_id' | 'userId'>>
-  ): Promise<IChatSession | null> {
-    return ChatSession.findByIdAndUpdate(
-      sessionId,
+    updates: Partial<Omit<ChatSessionDocument, '_id' | 'userId'>>
+  ): Promise<ChatSessionDocument | null> {
+    return (await ChatSession.findByIdAndUpdate(
+      toObjectId(sessionId),
       { ...updates, lastActive: new Date() },
       { new: true }
-    );
+    )) as ChatSessionDocument | null;
   }
 
   /**
@@ -109,12 +114,12 @@ class ChatService {
    */
   async archiveChatSession(
     sessionId: Types.ObjectId | string
-  ): Promise<IChatSession | null> {
-    return ChatSession.findByIdAndUpdate(
-      sessionId,
+  ): Promise<ChatSessionDocument | null> {
+    return (await ChatSession.findByIdAndUpdate(
+      toObjectId(sessionId),
       { status: 'archived' },
       { new: true }
-    );
+    )) as ChatSessionDocument | null;
   }
 
   /**
@@ -122,12 +127,14 @@ class ChatService {
    * @param options - Message creation options
    * @returns The created message
    */
-  async addMessage(options: CreateMessageOptions): Promise<IChatMessage> {
+  async addMessage(
+    options: CreateMessageOptions
+  ): Promise<ChatMessageDocument> {
     const { sessionId, role, content, metadata } = options;
 
     // Create the new message
     const message = new ChatMessage({
-      sessionId,
+      sessionId: toObjectId(sessionId),
       role,
       content,
       timestamp: new Date(),
@@ -137,7 +144,7 @@ class ChatService {
     await message.save();
 
     // Update the chat session
-    await ChatSession.findByIdAndUpdate(sessionId, {
+    await ChatSession.findByIdAndUpdate(toObjectId(sessionId), {
       lastActive: new Date(),
       $push: { messages: message._id },
     });
@@ -156,11 +163,11 @@ class ChatService {
     sessionId: Types.ObjectId | string,
     limit = 50,
     skip = 0
-  ): Promise<IChatMessage[]> {
-    return ChatMessage.find({ sessionId })
+  ): Promise<ChatMessageDocument[]> {
+    return (await ChatMessage.find({ sessionId: toObjectId(sessionId) })
       .sort({ timestamp: 1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)) as ChatMessageDocument[];
   }
 
   /**
@@ -173,7 +180,9 @@ class ChatService {
     sessionId: Types.ObjectId | string,
     limit = 10
   ): Promise<Array<{ role: string; content: string }>> {
-    const messages = await ChatMessage.find({ sessionId })
+    const messages = await ChatMessage.find({
+      sessionId: toObjectId(sessionId),
+    })
       .sort({ timestamp: -1 })
       .limit(limit);
 
@@ -189,8 +198,8 @@ class ChatService {
    * @param sessionId - The chat session ID
    */
   async deleteChatSession(sessionId: Types.ObjectId | string): Promise<void> {
-    await ChatMessage.deleteMany({ sessionId });
-    await ChatSession.findByIdAndDelete(sessionId);
+    await ChatMessage.deleteMany({ sessionId: toObjectId(sessionId) });
+    await ChatSession.findByIdAndDelete(toObjectId(sessionId));
   }
 }
 

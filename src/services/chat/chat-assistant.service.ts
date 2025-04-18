@@ -10,13 +10,14 @@ import {
   TaskBreakdownSuggestion,
   TaskImprovementSuggestion,
 } from '../../models/suggestion.model';
+import { toObjectId } from '../../types/mongoose';
 import { boardAdapter } from '../ai/adapters/board.adapter';
 import { taskBreakdownAdapter } from '../ai/adapters/task-breakdown.adapter';
 import { taskImprovementAdapter } from '../ai/adapters/task-improvement.adapter';
 import {
   BoardSuggestion as AIBoardSuggestion,
   TaskImprovementSuggestion as AITaskImprovementSuggestion,
-  AssistantService,
+  assistantService,
 } from '../ai/assistant.service';
 import { openAIService } from '../ai/openai.service';
 import { SubtaskSuggestion as AISubtaskSuggestion } from '../ai/templates/board-suggestion.template';
@@ -42,11 +43,7 @@ interface ProcessMessageResult {
  * Service to handle AI assistant chat functionality
  */
 class ChatAssistantService {
-  private assistantService: AssistantService;
-
-  constructor() {
-    this.assistantService = new AssistantService();
-  }
+  constructor() {}
 
   /**
    * Transform AI-generated board suggestion to the database model format
@@ -148,10 +145,9 @@ class ChatAssistantService {
               { status: 'Generating board suggestion...' }
             );
 
-            const aiSuggestion =
-              await this.assistantService.generateBoardSuggestion(
-                extractedEntities.projectDescription
-              );
+            const aiSuggestion = await this.generateBoardSuggestion(
+              extractedEntities.projectDescription
+            );
 
             if (aiSuggestion) {
               // Get the chat session to access its userId
@@ -204,10 +200,9 @@ class ChatAssistantService {
               { status: 'Breaking down task...' }
             );
 
-            const taskBreakdown =
-              await this.assistantService.generateTaskBreakdown(
-                extractedEntities.taskDescription
-              );
+            const taskBreakdown = await this.generateTaskBreakdown(
+              extractedEntities.taskDescription
+            );
 
             if (taskBreakdown) {
               // Get the chat session to access its userId
@@ -264,10 +259,7 @@ class ChatAssistantService {
 
             // Find the board suggestion containing this task
             const boardSuggestion =
-              await suggestionService.findBoardSuggestionByTaskId(
-                sessionId,
-                taskId
-              );
+              await suggestionService.findSuggestionByTaskId(taskId);
 
             if (boardSuggestion) {
               // Safely convert Mongoose ObjectId to string
@@ -275,13 +267,17 @@ class ChatAssistantService {
                 boardSuggestion._id as Types.ObjectId
               ).toString();
               relatedSuggestionId = boardSuggestionId;
-              const { task, columnName: colName } =
-                suggestionService.findTaskInBoardSuggestion(
-                  boardSuggestion.content as BoardSuggestion,
-                  taskId
-                );
-              originalTask = task;
-              columnName = colName;
+
+              // Get task details and check if found
+              const taskResult = this.findTaskInBoardSuggestion(
+                boardSuggestion.content as BoardSuggestion,
+                taskId
+              );
+
+              if (taskResult) {
+                originalTask = taskResult.task;
+                columnName = taskResult.columnName;
+              }
             }
           } else if (
             extractedEntities.taskTitle &&
@@ -328,11 +324,10 @@ class ChatAssistantService {
               { status: 'Improving specific task...' }
             );
 
-            const taskImprovement =
-              await this.assistantService.improveTaskDescription(
-                originalTask.title,
-                originalTask.description
-              );
+            const taskImprovement = await this.improveTaskDescription(
+              originalTask.title,
+              originalTask.description
+            );
 
             if (taskImprovement) {
               // Get the chat session to access its userId
@@ -384,11 +379,10 @@ class ChatAssistantService {
               { status: 'Improving task...' }
             );
 
-            const taskImprovement =
-              await this.assistantService.improveTaskDescription(
-                extractedEntities.taskTitle,
-                extractedEntities.taskDescription || ''
-              );
+            const taskImprovement = await this.improveTaskDescription(
+              extractedEntities.taskTitle,
+              extractedEntities.taskDescription || ''
+            );
 
             if (taskImprovement) {
               // Get the chat session to access its userId
@@ -472,14 +466,14 @@ class ChatAssistantService {
         content: conversationalResponse,
         metadata: result.suggestionId
           ? {
-              // The metadata must match the expected fields in IChatMessage
+              // Convert string IDs to ObjectId when needed
               suggestedBoardId: result.suggestions.boardSuggestion
-                ? result.suggestionId
+                ? toObjectId(result.suggestionId)
                 : undefined,
               suggestedTaskId:
                 result.suggestions.taskBreakdown ||
                 result.suggestions.taskImprovement
-                  ? result.suggestionId
+                  ? toObjectId(result.suggestionId)
                   : undefined,
               confidence: result.confidence,
             }
@@ -600,13 +594,13 @@ class ChatAssistantService {
     let response = `I've improved your task:\n\n`;
 
     response += `**Original Title:**\n${originalTitle}\n\n`;
-    response += `**Improved Title:**\n${improvement.title}\n\n`;
+    response += `**Improved Title:**\n${improvement.improvedTask.title}\n\n`;
 
     if (originalDescription) {
       response += `**Original Description:**\n${originalDescription}\n\n`;
     }
 
-    response += `**Improved Description:**\n${improvement.description}\n\n`;
+    response += `**Improved Description:**\n${improvement.improvedTask.description}\n\n`;
 
     response += 'Would you like to use these improvements?';
     response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
@@ -633,18 +627,44 @@ class ChatAssistantService {
     let response = `I've improved the task "${originalTitle}" from the ${columnName} column:\n\n`;
 
     response += `**Original Title:**\n${originalTitle}\n\n`;
-    response += `**Improved Title:**\n${improvement.title}\n\n`;
+    response += `**Improved Title:**\n${improvement.improvedTask.title}\n\n`;
 
     if (originalDescription) {
       response += `**Original Description:**\n${originalDescription}\n\n`;
     }
 
-    response += `**Improved Description:**\n${improvement.description}\n\n`;
+    response += `**Improved Description:**\n${improvement.improvedTask.description}\n\n`;
+
+    if (improvement.reasoning) {
+      response += `**Reasoning:**\n${improvement.reasoning}\n\n`;
+    }
 
     response += 'Would you like to use these improvements?';
     response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
 
     return response;
+  }
+
+  /**
+   * Find a task in a board suggestion by task ID
+   * @param boardSuggestion Board suggestion
+   * @param taskId Task ID
+   * @returns Task and column name if found, otherwise null
+   */
+  private findTaskInBoardSuggestion(
+    boardSuggestion: BoardSuggestion,
+    taskId: string
+  ): {
+    task: { title: string; description: string };
+    columnName: string;
+  } | null {
+    for (const column of boardSuggestion.columns) {
+      const task = column.tasks.find((t) => t.id === taskId);
+      if (task) {
+        return { task, columnName: column.name };
+      }
+    }
+    return null;
   }
 
   /**
@@ -730,6 +750,18 @@ Keep responses helpful, clear, and concise.`,
       console.error('Error generating conversational response:', error);
       return 'I encountered an error while generating a response. Please try again.';
     }
+  }
+
+  private async generateBoardSuggestion(projectDescription: string) {
+    return assistantService.generateBoardSuggestion(projectDescription);
+  }
+
+  private async generateTaskBreakdown(taskDescription: string) {
+    return assistantService.generateTaskBreakdown(taskDescription);
+  }
+
+  private async improveTaskDescription(title: string, description: string) {
+    return assistantService.improveTaskDescription(title, description);
   }
 }
 

@@ -27,8 +27,8 @@ export type MongoDocument<T> = Document<unknown, object, T> &
   };
 
 /**
- * Centralized model document types
- * This provides a single source of truth for document types
+ * Centralized document types and model interfaces
+ * This provides a single source of truth for MongoDB documents
  */
 
 // Model document types
@@ -50,6 +50,16 @@ export interface UserModel
   extends Model<IUser, Record<string, never>, UserDocument> {
   cleanupExpiredGuests(): Promise<void>;
 }
+
+// Model interfaces (re-exported for convenience)
+export type User = IUser;
+export type Board = IBoard;
+export type Column = IColumn;
+export type Task = ITask;
+export type Subtask = ISubtask;
+export type Suggestion = ISuggestion;
+export type ChatSession = IChatSession;
+export type ChatMessage = IChatMessage;
 
 /**
  * Utility for safely converting IDs to ObjectId

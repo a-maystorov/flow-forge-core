@@ -30,7 +30,7 @@ class SuggestionService {
     });
 
     await suggestion.save();
-    return suggestion as unknown as SuggestionDocument;
+    return suggestion as SuggestionDocument;
   }
 
   /**
@@ -52,7 +52,7 @@ class SuggestionService {
     });
 
     await suggestion.save();
-    return suggestion as unknown as SuggestionDocument;
+    return suggestion as SuggestionDocument;
   }
 
   /**
@@ -80,7 +80,7 @@ class SuggestionService {
     });
 
     await suggestion.save();
-    return suggestion as unknown as SuggestionDocument;
+    return suggestion as SuggestionDocument;
   }
 
   /**
@@ -89,7 +89,9 @@ class SuggestionService {
   async getSuggestion(
     suggestionId: string | Types.ObjectId
   ): Promise<SuggestionDocument | null> {
-    return Suggestion.findById(toObjectId(suggestionId));
+    return Suggestion.findById(
+      toObjectId(suggestionId)
+    ) as Promise<SuggestionDocument | null>;
   }
 
   /**
@@ -100,7 +102,7 @@ class SuggestionService {
   ): Promise<SuggestionDocument[]> {
     return Suggestion.find({
       userId: toObjectId(userId),
-    }) as unknown as SuggestionDocument[];
+    }) as Promise<SuggestionDocument[]>;
   }
 
   /**
@@ -111,7 +113,7 @@ class SuggestionService {
   ): Promise<SuggestionDocument[]> {
     return Suggestion.find({ sessionId: toObjectId(sessionId) }).sort({
       createdAt: -1,
-    }) as unknown as SuggestionDocument[];
+    }) as Promise<SuggestionDocument[]>;
   }
 
   /**
@@ -123,7 +125,7 @@ class SuggestionService {
     return Suggestion.find({
       sessionId: toObjectId(sessionId),
       status: SuggestionStatus.PENDING,
-    }).sort({ createdAt: -1 }) as unknown as SuggestionDocument[];
+    }).sort({ createdAt: -1 }) as Promise<SuggestionDocument[]>;
   }
 
   /**
@@ -133,7 +135,9 @@ class SuggestionService {
     suggestionId: string | Types.ObjectId,
     messageContent?: string
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(toObjectId(suggestionId));
+    const suggestion = (await Suggestion.findById(
+      toObjectId(suggestionId)
+    )) as SuggestionDocument | null;
 
     if (!suggestion) {
       return null;
@@ -183,12 +187,14 @@ class SuggestionService {
       }
     } catch (error) {
       console.error('Error processing accepted suggestion:', error);
-      // We don't want to throw here, just log the error
-      // The suggestion is still marked as accepted even if processing fails
+      // Revert to pending if there was an error
+      suggestion.status = SuggestionStatus.PENDING;
+      await suggestion.save();
+      throw error;
     }
 
     // Return the updated suggestion
-    return suggestion as unknown as SuggestionDocument;
+    return suggestion;
   }
 
   /**
@@ -198,7 +204,9 @@ class SuggestionService {
     suggestionId: string | Types.ObjectId,
     messageContent?: string
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(toObjectId(suggestionId));
+    const suggestion = (await Suggestion.findById(
+      toObjectId(suggestionId)
+    )) as SuggestionDocument | null;
 
     if (!suggestion) {
       return null;
@@ -223,7 +231,7 @@ class SuggestionService {
       });
     }
 
-    return suggestion as unknown as SuggestionDocument;
+    return suggestion;
   }
 
   /**
@@ -236,7 +244,9 @@ class SuggestionService {
     >,
     messageContent?: string
   ): Promise<SuggestionDocument | null> {
-    const suggestion = await Suggestion.findById(toObjectId(suggestionId));
+    const suggestion = (await Suggestion.findById(
+      toObjectId(suggestionId)
+    )) as SuggestionDocument | null;
 
     if (!suggestion) {
       return null;
@@ -268,50 +278,29 @@ class SuggestionService {
       });
     }
 
-    return suggestion as unknown as SuggestionDocument;
+    return suggestion;
   }
 
   /**
-   * Find a board suggestion containing a specific task
+   * Find the suggestion containing a task by ID
    */
-  async findBoardSuggestionByTaskId(
-    sessionId: string | Types.ObjectId,
+  async findSuggestionByTaskId(
     taskId: string
   ): Promise<SuggestionDocument | null> {
-    const boardSuggestions = await Suggestion.find({
-      sessionId: toObjectId(sessionId),
+    const suggestions = await Suggestion.find({
       type: 'board',
     });
 
-    for (const suggestion of boardSuggestions) {
+    for (const suggestion of suggestions) {
       const boardSuggestion = suggestion.content as BoardSuggestion;
       for (const column of boardSuggestion.columns) {
         if (column.tasks.some((task) => task.id === taskId)) {
-          return suggestion as unknown as SuggestionDocument;
+          return suggestion as SuggestionDocument;
         }
       }
     }
 
     return null;
-  }
-
-  /**
-   * Find a task within a board suggestion by ID
-   */
-  findTaskInBoardSuggestion(
-    boardSuggestion: BoardSuggestion,
-    taskId: string
-  ): {
-    task: { title: string; description: string } | null;
-    columnName: string | null;
-  } {
-    for (const column of boardSuggestion.columns) {
-      const task = column.tasks.find((task) => task.id === taskId);
-      if (task) {
-        return { task, columnName: column.name };
-      }
-    }
-    return { task: null, columnName: null };
   }
 }
 

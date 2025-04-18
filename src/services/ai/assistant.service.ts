@@ -183,8 +183,12 @@ export class AssistantService {
       throw new Error('Failed to generate task improvement');
     }
 
-    // Transform the AI response into an application model
-    return taskImprovementAdapter.toSuggestionModel(improvement);
+    // Transform the AI response into an application model, passing original task details
+    return taskImprovementAdapter.toSuggestionModel(
+      improvement,
+      taskTitle,
+      taskDescription
+    );
   }
 }
 
