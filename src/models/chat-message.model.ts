@@ -1,11 +1,18 @@
 import mongoose, { Schema, Types } from 'mongoose';
 
+export enum MessageStatus {
+  SENT = 'sent',
+  DELIVERED = 'delivered',
+  READ = 'read',
+}
+
 export interface ChatMessageMetadata {
   suggestedBoardId?: Types.ObjectId;
   suggestedTaskId?: Types.ObjectId;
   suggestedColumnId?: Types.ObjectId;
   intent?: string;
   confidence?: number;
+  readReceipts?: string[];
   [key: string]: unknown; // For any other properties that might be added
 }
 
@@ -15,6 +22,7 @@ export interface IChatMessage {
   content: string;
   timestamp: Date;
   metadata?: ChatMessageMetadata;
+  status?: MessageStatus;
 }
 
 const ChatMessageSchema: Schema = new Schema({
@@ -38,6 +46,11 @@ const ChatMessageSchema: Schema = new Schema({
     default: Date.now,
     index: true,
   },
+  status: {
+    type: String,
+    enum: Object.values(MessageStatus),
+    default: MessageStatus.SENT,
+  },
   metadata: {
     suggestedBoardId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -53,6 +66,7 @@ const ChatMessageSchema: Schema = new Schema({
     },
     intent: String,
     confidence: Number,
+    readReceipts: [String], // Array of user IDs who have read the message
   },
 });
 

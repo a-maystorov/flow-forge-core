@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
-import { socketService } from '../config/socket';
+import { SuggestionStatus, socketService } from '../config/socket';
 import { suggestionService } from '../services/suggestion/suggestion.service';
 
 /**
@@ -94,15 +94,11 @@ export class SuggestionController {
         return;
       }
 
-      // Emit event for real-time updates
-      socketService.emitToChatSession(
+      // Emit event for real-time updates using the new method
+      socketService.emitSuggestionStatusUpdate(
         suggestion.sessionId.toString(),
-        'suggestion_accepted',
-        {
-          suggestionId: suggestion._id,
-          type: suggestion.type,
-          content: suggestion.content,
-        }
+        suggestion._id.toString(),
+        'accepted' as SuggestionStatus
       );
 
       res.json(suggestion);
@@ -118,7 +114,7 @@ export class SuggestionController {
   async rejectSuggestion(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { message, reason } = req.body;
+      const { message } = req.body;
 
       if (!Types.ObjectId.isValid(id)) {
         res.status(400).json({ error: 'Invalid suggestion ID' });
@@ -132,15 +128,11 @@ export class SuggestionController {
         return;
       }
 
-      // Emit event for real-time updates
-      socketService.emitToChatSession(
+      // Emit event for real-time updates using the new method
+      socketService.emitSuggestionStatusUpdate(
         suggestion.sessionId.toString(),
-        'suggestion_rejected',
-        {
-          suggestionId: suggestion._id,
-          type: suggestion.type,
-          reason: reason || 'No reason provided',
-        }
+        suggestion._id.toString(),
+        'rejected' as SuggestionStatus
       );
 
       res.json(suggestion);
