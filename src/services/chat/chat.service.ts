@@ -240,6 +240,21 @@ class ChatService {
   }
 
   /**
+   * Set user typing status in a chat session
+   * @param sessionId - Chat session ID
+   * @param isTyping - Whether the user is typing
+   */
+  async setUserTypingStatus(
+    sessionId: Types.ObjectId | string,
+    isTyping: boolean
+  ): Promise<void> {
+    await this.setTypingStatus({
+      sessionId,
+      isTyping,
+    });
+  }
+
+  /**
    * Set AI typing indicator to show that the AI is generating a response
    * @param sessionId - Chat session ID
    * @param isTyping - Whether the AI is typing

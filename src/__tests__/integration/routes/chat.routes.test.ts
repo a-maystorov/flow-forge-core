@@ -1,23 +1,11 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import request from 'supertest';
+import app from '../../../app';
+import { socketService } from '../../../config/socket';
 import ChatMessage from '../../../models/chat-message.model';
 import ChatSession from '../../../models/chat-session.model';
 import User from '../../../models/user.model';
-
-// Mock the socket service BEFORE importing app
-jest.mock('../../../config/socket', () => ({
-  socketService: {
-    initialize: jest.fn(),
-    emitToChatSession: jest.fn(),
-    getUserSocketsInRoom: jest.fn().mockReturnValue([]),
-    joinRoom: jest.fn(),
-    leaveRoom: jest.fn(),
-  },
-}));
-
-// Import app after mocking dependencies
-import app from '../../../app';
 import { chatAssistantService } from '../../../services/chat';
 
 // Mock the chat assistant service
@@ -284,6 +272,103 @@ describe('Chat Routes', () => {
         .send({});
 
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/chat/:sessionId/typing', () => {
+    it('should update user typing status', async () => {
+      // Create a test session
+      const session = await ChatSession.create({
+        userId,
+        title: 'Test Session',
+      });
+
+      const response = await request(app)
+        .post(`/api/chat/${session._id}/typing`)
+        .set('x-auth-token', authToken)
+        .send({
+          isTyping: true,
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+
+      // Verify that socket event was emitted
+      expect(socketService.emitToChatSession).toHaveBeenCalledWith(
+        expect.any(String),
+        'user_typing',
+        expect.objectContaining({
+          isTyping: true,
+        })
+      );
+    });
+
+    it('should return 400 if typing status is missing', async () => {
+      // Create a test session
+      const session = await ChatSession.create({
+        userId,
+        title: 'Test Session',
+      });
+
+      const response = await request(app)
+        .post(`/api/chat/${session._id}/typing`)
+        .set('x-auth-token', authToken)
+        .send({});
+
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/chat/:sessionId/messages/:messageId/read', () => {
+    it('should mark a message as read', async () => {
+      // Create a test session and message
+      const session = await ChatSession.create({
+        userId,
+        title: 'Test Session',
+      });
+
+      const message = await ChatMessage.create({
+        sessionId: session._id,
+        role: 'assistant',
+        content: 'Test message',
+      });
+
+      const response = await request(app)
+        .post(`/api/chat/${session._id}/messages/${message._id}/read`)
+        .set('x-auth-token', authToken)
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+
+      // Verify that socket event was emitted
+      expect(socketService.emitToChatSession).toHaveBeenCalledWith(
+        expect.any(String),
+        'message_read_status',
+        expect.objectContaining({
+          messageId: message._id.toString(),
+        })
+      );
+
+      // Verify message was updated in database
+      const updatedMessage = await ChatMessage.findById(message._id);
+      expect(updatedMessage?.status).toBe('read');
+    });
+
+    it('should return 404 if message does not exist', async () => {
+      // Create a test session
+      const session = await ChatSession.create({
+        userId,
+        title: 'Test Session',
+      });
+
+      const nonExistentId = new mongoose.Types.ObjectId();
+      const response = await request(app)
+        .post(`/api/chat/${session._id}/messages/${nonExistentId}/read`)
+        .set('x-auth-token', authToken)
+        .send({});
+
+      expect(response.status).toBe(404);
     });
   });
 });

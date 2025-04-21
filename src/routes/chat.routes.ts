@@ -30,6 +30,22 @@ const sessionIdParamSchema = z.object({
   }),
 });
 
+const typingStatusSchema = z.object({
+  body: z.object({
+    isTyping: z.boolean({ required_error: 'Typing status is required' }),
+  }),
+  params: z.object({
+    sessionId: z.string().min(1, 'Session ID is required'),
+  }),
+});
+
+const messageReadSchema = z.object({
+  params: z.object({
+    sessionId: z.string().min(1, 'Session ID is required'),
+    messageId: z.string().min(1, 'Message ID is required'),
+  }),
+});
+
 const queriesSchema = z.object({
   query: z.object({
     limit: z
@@ -143,6 +159,30 @@ router.post(
   auth,
   validateRequest(sendMessageSchema),
   chatController.sendMessage.bind(chatController)
+);
+
+/**
+ * @route POST /api/chat/:sessionId/typing
+ * @desc Update typing status for a user in a chat session
+ * @access Private
+ */
+router.post(
+  '/:sessionId/typing',
+  auth,
+  validateRequest(typingStatusSchema),
+  chatController.updateTypingStatus.bind(chatController)
+);
+
+/**
+ * @route POST /api/chat/:sessionId/messages/:messageId/read
+ * @desc Mark a message as read
+ * @access Private
+ */
+router.post(
+  '/:sessionId/messages/:messageId/read',
+  auth,
+  validateRequest(messageReadSchema),
+  chatController.markMessageAsRead.bind(chatController)
 );
 
 export default router;

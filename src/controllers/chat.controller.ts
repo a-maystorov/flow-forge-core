@@ -298,6 +298,101 @@ export class ChatController {
       res.status(500).json({ message: 'Failed to process message' });
     }
   }
+
+  /**
+   * Update typing status for a user in a chat session
+   */
+  async updateTypingStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const { sessionId } = req.params;
+      const { isTyping } = req.body;
+      const userId = req.userId;
+
+      if (!userId) {
+        res.status(401).json({ message: 'User not authenticated' });
+        return;
+      }
+
+      // Validate ObjectId format
+      if (!Types.ObjectId.isValid(sessionId)) {
+        res.status(400).json({ message: 'Invalid session ID' });
+        return;
+      }
+
+      const session = await chatService.getChatSession(sessionId);
+
+      if (!session) {
+        res.status(404).json({ message: 'Chat session not found' });
+        return;
+      }
+
+      // Check if session belongs to user
+      if (session.userId.toString() !== userId.toString()) {
+        res.status(403).json({ message: 'Access denied' });
+        return;
+      }
+
+      // Update typing status
+      await chatService.setUserTypingStatus(sessionId, isTyping);
+
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error('Error updating typing status:', error);
+      res.status(500).json({ message: 'Failed to update typing status' });
+    }
+  }
+
+  /**
+   * Mark a message as read
+   */
+  async markMessageAsRead(req: Request, res: Response): Promise<void> {
+    try {
+      const { sessionId, messageId } = req.params;
+      const userId = req.userId;
+
+      if (!userId) {
+        res.status(401).json({ message: 'User not authenticated' });
+        return;
+      }
+
+      // Validate ObjectId format
+      if (
+        !Types.ObjectId.isValid(sessionId) ||
+        !Types.ObjectId.isValid(messageId)
+      ) {
+        res.status(400).json({ message: 'Invalid session or message ID' });
+        return;
+      }
+
+      const session = await chatService.getChatSession(sessionId);
+
+      if (!session) {
+        res.status(404).json({ message: 'Chat session not found' });
+        return;
+      }
+
+      // Check if session belongs to user
+      if (session.userId.toString() !== userId.toString()) {
+        res.status(403).json({ message: 'Access denied' });
+        return;
+      }
+
+      // Mark message as read
+      try {
+        await chatService.markMessageAsRead(messageId);
+        res.status(200).json({ success: true });
+      } catch (error) {
+        if (error instanceof Error && error.message === 'Message not found') {
+          res.status(404).json({ message: 'Message not found' });
+        } else {
+          throw error; // Re-throw for the outer catch block
+        }
+      }
+    } catch (error) {
+      console.error('Error marking message as read:', error);
+      res.status(500).json({ message: 'Failed to mark message as read' });
+    }
+  }
 }
 
 export const chatController = new ChatController();
