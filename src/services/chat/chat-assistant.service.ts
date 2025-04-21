@@ -87,6 +87,9 @@ class ChatAssistantService {
       throw new Error('Chat session not found');
     }
 
+    // Show AI typing indicator
+    await chatService.setAITypingStatus(sessionId, true);
+
     // Default result structure
     const result: ProcessMessageResult = {
       responseMessage: {
@@ -134,17 +137,56 @@ class ChatAssistantService {
               result.suggestions.boardSuggestion =
                 boardAdapter.toSuggestionModel(boardSuggestion);
 
-              conversationalResponse = this.formatBoardSuggestionResponse(
+              const formattedResponse = this.formatBoardSuggestionResponse(
                 boardAdapter.toSuggestionModel(boardSuggestion),
                 suggestionId
               );
+
+              // Add the assistant response to the chat session
+              const assistantMessage = await chatService.addMessage({
+                sessionId,
+                role: 'assistant',
+                content: formattedResponse,
+                metadata: {
+                  intent: CHAT_INTENTS.CREATE_BOARD,
+                  confidence: intentResult.confidence,
+                  suggestedBoardId: storedSuggestion._id,
+                },
+              });
+
+              result.responseMessage = assistantMessage;
             } else {
               conversationalResponse =
                 "I'm sorry, I wasn't able to generate a board suggestion. Could you provide more details about your project?";
+
+              // Add the assistant response to the chat session
+              const assistantMessage = await chatService.addMessage({
+                sessionId,
+                role: 'assistant',
+                content: conversationalResponse,
+              });
+
+              result.responseMessage = assistantMessage;
             }
           } else {
-            conversationalResponse =
-              "I'd be happy to suggest a board layout for your project. Could you tell me a bit more about what you're working on?";
+            // Low confidence - use conversational fallback
+            conversationalResponse = await this.generateConversationalResponse(
+              message,
+              conversationContext
+            );
+
+            // Add the assistant response to the chat session
+            const assistantMessage = await chatService.addMessage({
+              sessionId,
+              role: 'assistant',
+              content: conversationalResponse,
+              metadata: {
+                intent: CHAT_INTENTS.GENERAL_CONVERSATION,
+                confidence: intentResult.confidence,
+              },
+            });
+
+            result.responseMessage = assistantMessage;
           }
           break;
 
@@ -171,17 +213,56 @@ class ChatAssistantService {
               result.suggestions.taskBreakdown =
                 taskBreakdownAdapter.toSuggestionModel(taskBreakdown);
 
-              conversationalResponse = this.formatTaskBreakdownResponse(
+              const formattedResponse = this.formatTaskBreakdownResponse(
                 taskBreakdownAdapter.toSuggestionModel(taskBreakdown),
                 suggestionId
               );
+
+              // Add the assistant response to the chat session
+              const assistantMessage = await chatService.addMessage({
+                sessionId,
+                role: 'assistant',
+                content: formattedResponse,
+                metadata: {
+                  intent: CHAT_INTENTS.BREAKDOWN_TASK,
+                  confidence: intentResult.confidence,
+                  suggestedTaskBreakdownId: storedSuggestion._id,
+                },
+              });
+
+              result.responseMessage = assistantMessage;
             } else {
               conversationalResponse =
                 "I'm sorry, I wasn't able to break down that task. Could you provide more details about what the task involves?";
+
+              // Add the assistant response to the chat session
+              const assistantMessage = await chatService.addMessage({
+                sessionId,
+                role: 'assistant',
+                content: conversationalResponse,
+              });
+
+              result.responseMessage = assistantMessage;
             }
           } else {
-            conversationalResponse =
-              "I'd be happy to help break down a task into subtasks. Could you describe the task in more detail?";
+            // Low confidence - use conversational fallback
+            conversationalResponse = await this.generateConversationalResponse(
+              message,
+              conversationContext
+            );
+
+            // Add the assistant response to the chat session
+            const assistantMessage = await chatService.addMessage({
+              sessionId,
+              role: 'assistant',
+              content: conversationalResponse,
+              metadata: {
+                intent: CHAT_INTENTS.GENERAL_CONVERSATION,
+                confidence: intentResult.confidence,
+              },
+            });
+
+            result.responseMessage = assistantMessage;
           }
           break;
 
@@ -223,7 +304,7 @@ class ChatAssistantService {
                   taskDescription
                 );
 
-              conversationalResponse = this.formatTaskImprovementResponse(
+              const formattedResponse = this.formatTaskImprovementResponse(
                 taskTitle,
                 taskDescription,
                 taskImprovementAdapter.toSuggestionModel(
@@ -233,56 +314,93 @@ class ChatAssistantService {
                 ),
                 suggestionId
               );
+
+              // Add the assistant response to the chat session
+              const assistantMessage = await chatService.addMessage({
+                sessionId,
+                role: 'assistant',
+                content: formattedResponse,
+                metadata: {
+                  intent: CHAT_INTENTS.IMPROVE_TASK,
+                  confidence: intentResult.confidence,
+                  suggestedTaskImprovementId: storedSuggestion._id,
+                },
+              });
+
+              result.responseMessage = assistantMessage;
             } else {
               conversationalResponse =
                 "I'm sorry, I wasn't able to improve that task. Could you provide more details?";
+
+              // Add the assistant response to the chat session
+              const assistantMessage = await chatService.addMessage({
+                sessionId,
+                role: 'assistant',
+                content: conversationalResponse,
+              });
+
+              result.responseMessage = assistantMessage;
             }
           } else {
-            conversationalResponse =
-              "I'd be happy to help improve that task description. Could you tell me more about what the task involves?";
+            // Low confidence - use conversational fallback
+            conversationalResponse = await this.generateConversationalResponse(
+              message,
+              conversationContext
+            );
+
+            // Add the assistant response to the chat session
+            const assistantMessage = await chatService.addMessage({
+              sessionId,
+              role: 'assistant',
+              content: conversationalResponse,
+              metadata: {
+                intent: CHAT_INTENTS.GENERAL_CONVERSATION,
+                confidence: intentResult.confidence,
+              },
+            });
+
+            result.responseMessage = assistantMessage;
           }
           break;
 
         default:
-          // Generate a generic conversational response using OpenAI
+          // General conversation
           conversationalResponse = await this.generateConversationalResponse(
             message,
             conversationContext
           );
+
+          // Add the assistant response to the chat session
+          const assistantMessage = await chatService.addMessage({
+            sessionId,
+            role: 'assistant',
+            content: conversationalResponse,
+            metadata: {
+              intent: CHAT_INTENTS.GENERAL_CONVERSATION,
+              confidence: intentResult.confidence,
+            },
+          });
+
+          result.responseMessage = assistantMessage;
           break;
       }
     } catch (error) {
-      console.error('Error processing message intent:', error);
+      console.error('Error processing message:', error);
       conversationalResponse =
-        "I'm sorry, I encountered an error while processing your request. Please try again.";
-    }
+        "I'm sorry, I encountered an error while processing your message. Please try again.";
 
-    // Add the assistant response to the chat session
-    const assistantMessage = await chatService.addMessage({
-      sessionId,
-      role: 'assistant',
-      content: conversationalResponse,
-    });
-
-    // Emit event for real-time updates
-    if (typeof sessionId === 'string') {
-      socketService.emitToChatSession(
+      // Add the error response to the chat session
+      const assistantMessage = await chatService.addMessage({
         sessionId,
-        'messageAdded',
-        assistantMessage
-      );
-    } else {
-      socketService.emitToChatSession(
-        sessionId.toString(),
-        'messageAdded',
-        assistantMessage
-      );
-    }
+        role: 'assistant',
+        content: conversationalResponse,
+      });
 
-    // Set the response message
-    result.responseMessage = {
-      content: conversationalResponse,
-    };
+      result.responseMessage = assistantMessage;
+    } finally {
+      // Hide AI typing indicator when response is complete
+      await chatService.setAITypingStatus(sessionId, false);
+    }
 
     return result;
   }

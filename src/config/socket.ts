@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import { Server } from 'socket.io';
+import { chatService } from '../services/chat';
 
 dotenv.config();
 
@@ -10,9 +11,18 @@ interface UserSocket {
   socketId: string;
 }
 
+interface TypingStatus {
+  userId: string;
+  sessionId: string;
+  isTyping: boolean;
+  timestamp: number;
+}
+
 class SocketService {
   private io: Server | null = null;
   private userSockets: UserSocket[] = [];
+  private typingUsers: TypingStatus[] = [];
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   initialize(server: http.Server) {
     this.io = new Server(server, {
@@ -68,11 +78,69 @@ class SocketService {
       socket.on('leave_chat', (sessionId: string) => {
         socket.leave(`chat:${sessionId}`);
         console.log(`User ${socket.data.userId} left chat ${sessionId}`);
+
+        // Remove typing indicator when user leaves
+        this.removeTypingUser(socket.data.userId, sessionId);
       });
+
+      // Handle typing indicator (from human user only)
+      socket.on(
+        'typing',
+        ({ sessionId, isTyping }: { sessionId: string; isTyping: boolean }) => {
+          const userId = socket.data.userId;
+
+          if (isTyping) {
+            this.addTypingUser(userId, sessionId);
+          } else {
+            this.removeTypingUser(userId, sessionId);
+          }
+
+          // We could emit something to indicate that the user is typing
+          // but since there's only an AI on the other end, it might not be necessary
+          // We'll keep this for potential future use or if we want to show this in the UI
+          this.io?.to(`chat:${sessionId}`).emit('user_typing', {
+            sessionId,
+            isTyping,
+          });
+        }
+      );
+
+      // Handle message read (when user has read an AI message)
+      socket.on(
+        'message_read',
+        async ({
+          sessionId,
+          messageId,
+        }: {
+          sessionId: string;
+          messageId: string;
+        }) => {
+          // Update message status in database
+          try {
+            await chatService.markMessageAsRead(messageId);
+
+            // Emit read status to all clients in the session (for UI updates)
+            this.io?.to(`chat:${sessionId}`).emit('message_read_status', {
+              messageId,
+            });
+          } catch (error) {
+            console.error('Error marking message as read:', error);
+          }
+        }
+      );
 
       // Handle disconnect
       socket.on('disconnect', () => {
         console.log(`User disconnected: ${socket.data.userId}`);
+
+        // Remove user from all typing indicators
+        [...socket.rooms]
+          .filter((room) => room.startsWith('chat:'))
+          .forEach((room) => {
+            const sessionId = room.replace('chat:', '');
+            this.removeTypingUser(socket.data.userId, sessionId);
+          });
+
         this.userSockets = this.userSockets.filter(
           (user) => user.socketId !== socket.id
         );
@@ -80,10 +148,83 @@ class SocketService {
     });
 
     console.log('Socket.IO initialized');
+
+    // Periodically clean up stale typing indicators (inactive for more than 10 seconds)
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const staleThreshold = 10000; // 10 seconds
+
+      const staleTypingUsers = this.typingUsers.filter(
+        (user) => now - user.timestamp > staleThreshold
+      );
+
+      staleTypingUsers.forEach((user) => {
+        this.removeTypingUser(user.userId, user.sessionId);
+        this.io?.to(`chat:${user.sessionId}`).emit('user_typing', {
+          sessionId: user.sessionId,
+          isTyping: false,
+        });
+      });
+    }, 10000);
   }
 
   /**
-   * Emit a message to all users in a chat session
+   * Clean up resources when shutting down
+   */
+  shutdown(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+
+    if (this.io) {
+      this.io.close();
+      this.io = null;
+    }
+  }
+
+  /**
+   * Add a user to the typing users list
+   * @param userId User ID
+   * @param sessionId Chat session ID
+   */
+  private addTypingUser(userId: string, sessionId: string) {
+    // Remove existing entry if any
+    this.removeTypingUser(userId, sessionId);
+
+    // Add new typing status
+    this.typingUsers.push({
+      userId,
+      sessionId,
+      isTyping: true,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Remove a user from the typing users list
+   * @param userId User ID
+   * @param sessionId Chat session ID
+   */
+  private removeTypingUser(userId: string, sessionId: string) {
+    this.typingUsers = this.typingUsers.filter(
+      (user) => !(user.userId === userId && user.sessionId === sessionId)
+    );
+  }
+
+  /**
+   * Check if the user is typing in a chat session
+   * @param sessionId Chat session ID
+   * @returns Boolean indicating if the user is typing
+   */
+  isUserTyping(sessionId: string): boolean {
+    return this.typingUsers.some(
+      (user) => user.sessionId === sessionId && user.isTyping
+    );
+  }
+
+  /**
+   * Emit a message to all sockets in a chat session
    * @param sessionId Chat session ID
    * @param event Event name
    * @param data Event data
@@ -118,6 +259,32 @@ class SocketService {
    */
   getIO() {
     return this.io;
+  }
+
+  /**
+   * Check if a user is online
+   * @param userId User ID
+   * @returns Boolean indicating if the user is online
+   */
+  isUserOnline(userId: string): boolean {
+    return this.userSockets.some((socket) => socket.userId === userId);
+  }
+
+  /**
+   * Send a typing indicator that the AI is generating a response
+   * @param sessionId Chat session ID
+   * @param isTyping Whether the AI is typing
+   */
+  setAITypingStatus(sessionId: string, isTyping: boolean): void {
+    if (!this.io) {
+      console.warn('Socket.IO not initialized');
+      return;
+    }
+
+    this.io.to(`chat:${sessionId}`).emit('ai_typing', {
+      sessionId,
+      isTyping,
+    });
   }
 }
 

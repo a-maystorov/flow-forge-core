@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
+import { socketService } from '../../config/socket';
 import ChatMessage, {
   ChatMessageMetadata,
+  MessageStatus,
 } from '../../models/chat-message.model';
 import ChatSession from '../../models/chat-session.model';
 import {
@@ -23,6 +25,12 @@ interface CreateMessageOptions {
   role: 'user' | 'assistant' | 'system';
   content: string;
   metadata?: ChatMessageMetadata;
+}
+
+// Typing status options
+interface TypingStatusOptions {
+  sessionId: Types.ObjectId | string;
+  isTyping: boolean;
 }
 
 /**
@@ -131,6 +139,8 @@ class ChatService {
     options: CreateMessageOptions
   ): Promise<ChatMessageDocument> {
     const { sessionId, role, content, metadata } = options;
+    const typedSessionId =
+      typeof sessionId === 'string' ? sessionId : sessionId.toString();
 
     // Create the new message
     const message = new ChatMessage({
@@ -138,7 +148,8 @@ class ChatService {
       role,
       content,
       timestamp: new Date(),
-      metadata,
+      metadata: metadata || {},
+      status: role === 'user' ? MessageStatus.SENT : MessageStatus.DELIVERED,
     });
 
     await message.save();
@@ -148,6 +159,14 @@ class ChatService {
       lastActive: new Date(),
       $push: { messages: message._id },
     });
+
+    // Clear typing indicator if this is a user message
+    if (role === 'user') {
+      this.setTypingStatus({
+        sessionId: typedSessionId,
+        isTyping: false,
+      });
+    }
 
     return message;
   }
@@ -200,6 +219,99 @@ class ChatService {
   async deleteChatSession(sessionId: Types.ObjectId | string): Promise<void> {
     await ChatMessage.deleteMany({ sessionId: toObjectId(sessionId) });
     await ChatSession.findByIdAndDelete(toObjectId(sessionId));
+  }
+
+  /**
+   * Update typing status for a user in a chat session
+   * @param options - Typing status options
+   */
+  async setTypingStatus(options: TypingStatusOptions): Promise<void> {
+    const { sessionId, isTyping } = options;
+
+    // Ensure string type for socket events
+    const typedSessionId =
+      typeof sessionId === 'string' ? sessionId : sessionId.toString();
+
+    // Emit typing status through socket
+    socketService.emitToChatSession(typedSessionId, 'user_typing', {
+      sessionId: typedSessionId,
+      isTyping,
+    });
+  }
+
+  /**
+   * Set AI typing indicator to show that the AI is generating a response
+   * @param sessionId - Chat session ID
+   * @param isTyping - Whether the AI is typing
+   */
+  async setAITypingStatus(
+    sessionId: Types.ObjectId | string,
+    isTyping: boolean
+  ): Promise<void> {
+    const typedSessionId =
+      typeof sessionId === 'string' ? sessionId : sessionId.toString();
+    socketService.setAITypingStatus(typedSessionId, isTyping);
+  }
+
+  /**
+   * Mark a message as read
+   * @param messageId - Message ID
+   */
+  async markMessageAsRead(messageId: Types.ObjectId | string): Promise<void> {
+    const message = (await ChatMessage.findById(
+      toObjectId(messageId)
+    )) as ChatMessageDocument;
+
+    if (!message) {
+      throw new Error('Message not found');
+    }
+
+    // Only update if not already read
+    if (message.status !== MessageStatus.READ) {
+      message.status = MessageStatus.READ;
+      await message.save();
+
+      // Emit read status
+      const typedSessionId =
+        typeof message.sessionId === 'string'
+          ? message.sessionId
+          : message.sessionId.toString();
+
+      socketService.emitToChatSession(typedSessionId, 'message_read_status', {
+        messageId: message._id.toString(),
+      });
+    }
+  }
+
+  /**
+   * Mark all AI messages in a session as read
+   * @param sessionId - Chat session ID
+   */
+  async markAllMessagesAsRead(
+    sessionId: Types.ObjectId | string
+  ): Promise<void> {
+    // Find all unread AI messages
+    const messages = (await ChatMessage.find({
+      sessionId: toObjectId(sessionId),
+      role: 'assistant',
+      status: { $ne: MessageStatus.READ },
+    })) as ChatMessageDocument[];
+
+    // Mark each message as read
+    for (const message of messages) {
+      await this.markMessageAsRead(message._id);
+    }
+  }
+
+  /**
+   * Check if the user is typing
+   * @param sessionId - Chat session ID
+   * @returns Boolean indicating if the user is typing
+   */
+  isUserTyping(sessionId: Types.ObjectId | string): boolean {
+    const typedSessionId =
+      typeof sessionId === 'string' ? sessionId : sessionId.toString();
+    return socketService.isUserTyping(typedSessionId);
   }
 }
 
