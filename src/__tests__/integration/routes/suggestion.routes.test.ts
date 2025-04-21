@@ -3,10 +3,17 @@ import mongoose, { Types } from 'mongoose';
 import request from 'supertest';
 import app from '../../../app';
 
+// Mock the socket service for suggestion updates
 jest.mock('../../../config/socket', () => ({
   socketService: {
+    emitSuggestionStatusUpdate: jest.fn(),
     emitToChatSession: jest.fn(),
     initialize: jest.fn(),
+  },
+  SuggestionStatus: {
+    ACCEPTED: 'accepted',
+    REJECTED: 'rejected',
+    PENDING: 'pending',
   },
 }));
 

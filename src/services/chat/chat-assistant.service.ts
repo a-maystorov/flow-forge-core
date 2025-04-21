@@ -90,6 +90,10 @@ class ChatAssistantService {
     // Show AI typing indicator
     await chatService.setAITypingStatus(sessionId, true);
 
+    // Get session ID as string for socket events
+    const sessionIdStr =
+      typeof sessionId === 'string' ? sessionId : sessionId.toString();
+
     // Default result structure
     const result: ProcessMessageResult = {
       responseMessage: {
@@ -113,6 +117,16 @@ class ChatAssistantService {
       switch (intentResult.intent) {
         case CHAT_INTENTS.CREATE_BOARD:
           if (intentResult.confidence >= 0.6) {
+            // Send typing indicator for suggestion generation
+            socketService.emitToChatSession(
+              sessionIdStr,
+              'suggestion_generating',
+              {
+                type: 'board',
+                progress: 'started',
+              }
+            );
+
             // Extract project description from message
             const projectDescription = message;
             // Generate board suggestion using AI
@@ -120,12 +134,16 @@ class ChatAssistantService {
               await this.generateBoardSuggestion(projectDescription);
 
             if (boardSuggestion) {
+              // Send preview of the suggestion being generated
+              const previewSuggestion =
+                boardAdapter.toSuggestionModel(boardSuggestion);
+
               // Store the suggestion in the database
               const storedSuggestion =
                 await suggestionService.createBoardSuggestion(
                   chatSession.userId,
                   sessionId,
-                  boardAdapter.toSuggestionModel(boardSuggestion),
+                  previewSuggestion,
                   message
                 );
 
@@ -134,11 +152,18 @@ class ChatAssistantService {
                 storedSuggestion._id as Types.ObjectId
               ).toString();
               result.suggestionId = suggestionId;
-              result.suggestions.boardSuggestion =
-                boardAdapter.toSuggestionModel(boardSuggestion);
+              result.suggestions.boardSuggestion = previewSuggestion;
+
+              // Emit the suggestion preview via WebSocket
+              socketService.emitSuggestionPreview(
+                sessionIdStr,
+                suggestionId,
+                'board' as const,
+                previewSuggestion
+              );
 
               const formattedResponse = this.formatBoardSuggestionResponse(
-                boardAdapter.toSuggestionModel(boardSuggestion),
+                previewSuggestion,
                 suggestionId
               );
 
@@ -192,16 +217,30 @@ class ChatAssistantService {
 
         case CHAT_INTENTS.BREAKDOWN_TASK:
           if (intentResult.confidence >= 0.6) {
+            // Send typing indicator for suggestion generation
+            socketService.emitToChatSession(
+              sessionIdStr,
+              'suggestion_generating',
+              {
+                type: 'task-breakdown',
+                progress: 'started',
+              }
+            );
+
             // Generate task breakdown using AI
             const taskBreakdown = await this.generateTaskBreakdown(message);
 
             if (taskBreakdown) {
+              // Send preview of the suggestion being generated
+              const previewSuggestion =
+                taskBreakdownAdapter.toSuggestionModel(taskBreakdown);
+
               // Store the suggestion in the database
               const storedSuggestion =
                 await suggestionService.createTaskBreakdownSuggestion(
                   chatSession.userId,
                   sessionId,
-                  taskBreakdownAdapter.toSuggestionModel(taskBreakdown),
+                  previewSuggestion,
                   message
                 );
 
@@ -210,11 +249,18 @@ class ChatAssistantService {
                 storedSuggestion._id as Types.ObjectId
               ).toString();
               result.suggestionId = suggestionId;
-              result.suggestions.taskBreakdown =
-                taskBreakdownAdapter.toSuggestionModel(taskBreakdown);
+              result.suggestions.taskBreakdown = previewSuggestion;
+
+              // Emit the suggestion preview via WebSocket
+              socketService.emitSuggestionPreview(
+                sessionIdStr,
+                suggestionId,
+                'task-breakdown' as const,
+                previewSuggestion
+              );
 
               const formattedResponse = this.formatTaskBreakdownResponse(
-                taskBreakdownAdapter.toSuggestionModel(taskBreakdown),
+                previewSuggestion,
                 suggestionId
               );
 
@@ -268,6 +314,16 @@ class ChatAssistantService {
 
         case CHAT_INTENTS.IMPROVE_TASK:
           if (intentResult.confidence >= 0.6) {
+            // Send typing indicator for suggestion generation
+            socketService.emitToChatSession(
+              sessionIdStr,
+              'suggestion_generating',
+              {
+                type: 'task-improvement',
+                progress: 'started',
+              }
+            );
+
             // Extract task title and description (if any)
             const taskTitle = message;
             const taskDescription = '';
@@ -279,16 +335,20 @@ class ChatAssistantService {
             );
 
             if (taskImprovement) {
+              // Send preview of the suggestion being generated
+              const previewSuggestion =
+                taskImprovementAdapter.toSuggestionModel(
+                  taskImprovement,
+                  taskTitle,
+                  taskDescription
+                );
+
               // Store the suggestion in the database
               const storedSuggestion =
                 await suggestionService.createTaskImprovementSuggestion(
                   chatSession.userId,
                   sessionId,
-                  taskImprovementAdapter.toSuggestionModel(
-                    taskImprovement,
-                    taskTitle,
-                    taskDescription
-                  ),
+                  previewSuggestion,
                   message
                 );
 
@@ -297,21 +357,20 @@ class ChatAssistantService {
                 storedSuggestion._id as Types.ObjectId
               ).toString();
               result.suggestionId = suggestionId;
-              result.suggestions.taskImprovement =
-                taskImprovementAdapter.toSuggestionModel(
-                  taskImprovement,
-                  taskTitle,
-                  taskDescription
-                );
+              result.suggestions.taskImprovement = previewSuggestion;
+
+              // Emit the suggestion preview via WebSocket
+              socketService.emitSuggestionPreview(
+                sessionIdStr,
+                suggestionId,
+                'task-improvement' as const,
+                previewSuggestion
+              );
 
               const formattedResponse = this.formatTaskImprovementResponse(
                 taskTitle,
                 taskDescription,
-                taskImprovementAdapter.toSuggestionModel(
-                  taskImprovement,
-                  taskTitle,
-                  taskDescription
-                ),
+                previewSuggestion,
                 suggestionId
               );
 
@@ -517,58 +576,68 @@ Remember that you're part of a project management tool, so try to be helpful and
   }
 
   /**
-   * Format a task breakdown into a user-friendly response
-   * @param breakdown Task breakdown with subtasks
+   * Format a task breakdown suggestion into a user-friendly response
+   * @param suggestion Task breakdown suggestion
    * @param suggestionId Suggestion ID
    * @returns Formatted response
    */
   private formatTaskBreakdownResponse(
-    breakdown: TaskBreakdownSuggestion,
+    suggestion: TaskBreakdownSuggestion,
     suggestionId: string
   ): string {
-    let response = `I've broken down "${breakdown.taskTitle}" into subtasks:\n\n`;
+    let response = `Here's a breakdown of your task into smaller, actionable subtasks:\n\n`;
 
-    breakdown.subtasks.forEach((subtask, index) => {
+    // Add each subtask
+    suggestion.subtasks.forEach((subtask, index) => {
       response += `${index + 1}. **${subtask.title}**\n`;
-      response += `   ${subtask.description}\n\n`;
+      if (subtask.description) {
+        response += `   ${subtask.description}\n`;
+      }
+      response += '\n';
     });
 
-    response += 'Would you like to use these subtasks or make some changes?';
+    response +=
+      'Would you like to use these subtasks or make some changes? You can accept or reject this suggestion.';
     response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
 
     return response;
   }
 
   /**
-   * Format a task improvement into a user-friendly response
-   * @param originalTitle Original task title
-   * @param originalDescription Original task description
-   * @param improvement Task improvement suggestion
+   * Format a task improvement suggestion into a user-friendly response
+   * @param originalTaskTitle Original task title
+   * @param originalTaskDescription Original task description (can be empty)
+   * @param suggestion Task improvement suggestion
    * @param suggestionId Suggestion ID
    * @returns Formatted response
    */
   private formatTaskImprovementResponse(
-    originalTitle: string,
-    originalDescription: string,
-    improvement: TaskImprovementSuggestion,
+    originalTaskTitle: string,
+    originalTaskDescription: string,
+    suggestion: TaskImprovementSuggestion,
     suggestionId: string
   ): string {
-    let response = `I've improved your task:\n\n`;
+    let response = `I've analyzed your task and have some improvements to suggest:\n\n`;
 
-    response += `**Original Title:**\n${originalTitle}\n\n`;
-    response += `**Improved Title:**\n${improvement.improvedTask.title}\n\n`;
+    // Show original task title
+    response += `**Original Title:** ${originalTaskTitle}\n`;
+    response += `**Improved Title:** ${suggestion.improvedTask.title}\n\n`;
 
-    if (originalDescription) {
-      response += `**Original Description:**\n${originalDescription}\n\n`;
+    // Show original and improved description if available
+    if (originalTaskDescription || suggestion.improvedTask.description) {
+      if (originalTaskDescription) {
+        response += `**Original Description:**\n${originalTaskDescription}\n\n`;
+      }
+      response += `**Improved Description:**\n${suggestion.improvedTask.description}\n\n`;
     }
 
-    response += `**Improved Description:**\n${improvement.improvedTask.description}\n\n`;
-
-    if (improvement.reasoning) {
-      response += `**Reasoning:**\n${improvement.reasoning}\n\n`;
+    // Add reasoning if available
+    if (suggestion.reasoning) {
+      response += `**Reasoning:**\n${suggestion.reasoning}\n\n`;
     }
 
-    response += 'Would you like to use these improvements?';
+    response +=
+      'Would you like to use these improvements or keep your original task? You can accept or reject this suggestion.';
     response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
 
     return response;
@@ -576,33 +645,35 @@ Remember that you're part of a project management tool, so try to be helpful and
 
   /**
    * Format a task improvement for a specific task from a board suggestion
-   * @param originalTitle Original task title
-   * @param originalDescription Original task description
-   * @param improvement Task improvement suggestion
+   * @param originalTaskTitle Original task title
+   * @param originalTaskDescription Original task description (can be empty)
+   * @param suggestion Task improvement suggestion
    * @param columnName Column name where the task exists
    * @param suggestionId Suggestion ID
    * @returns Formatted response
    */
   private formatSpecificTaskImprovementResponse(
-    originalTitle: string,
-    originalDescription: string,
-    improvement: TaskImprovementSuggestion,
+    originalTaskTitle: string,
+    originalTaskDescription: string,
+    suggestion: TaskImprovementSuggestion,
     columnName: string,
     suggestionId: string
   ): string {
-    let response = `I've improved the task "${originalTitle}" from the ${columnName} column:\n\n`;
+    let response = `I've improved the task "${originalTaskTitle}" from the ${columnName} column:\n\n`;
 
-    response += `**Original Title:**\n${originalTitle}\n\n`;
-    response += `**Improved Title:**\n${improvement.improvedTask.title}\n\n`;
+    response += `**Original Title:** ${originalTaskTitle}\n`;
+    response += `**Improved Title:** ${suggestion.improvedTask.title}\n\n`;
 
-    if (originalDescription) {
-      response += `**Original Description:**\n${originalDescription}\n\n`;
+    if (originalTaskDescription || suggestion.improvedTask.description) {
+      if (originalTaskDescription) {
+        response += `**Original Description:**\n${originalTaskDescription}\n\n`;
+      }
+      response += `**Improved Description:**\n${suggestion.improvedTask.description}\n\n`;
     }
 
-    response += `**Improved Description:**\n${improvement.improvedTask.description}\n\n`;
-
-    if (improvement.reasoning) {
-      response += `**Reasoning:**\n${improvement.reasoning}\n\n`;
+    // Add reasoning if available
+    if (suggestion.reasoning) {
+      response += `**Reasoning:**\n${suggestion.reasoning}\n\n`;
     }
 
     response += 'Would you like to use these improvements?';

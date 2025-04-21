@@ -11,6 +11,7 @@ import boardRoutes from './routes/board.routes';
 import chatRoutes from './routes/chat.routes';
 import suggestionRoutes from './routes/suggestion.routes';
 import userRoutes from './routes/user.routes';
+import chatSuggestionRoutes from './routes/chat-suggestion.routes';
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ app.use('/api/boards', boardRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/suggestions', suggestionRoutes);
+app.use('/api/chat-suggestions', chatSuggestionRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello, Flow Forge Core!');
