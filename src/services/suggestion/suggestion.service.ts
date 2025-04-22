@@ -1,4 +1,6 @@
 import { Types } from 'mongoose';
+import Column from '../../models/column.model';
+import Subtask from '../../models/subtask.model';
 import {
   BoardSuggestion,
   Suggestion,
@@ -6,7 +8,9 @@ import {
   TaskBreakdownSuggestion,
   TaskImprovementSuggestion,
 } from '../../models/suggestion.model';
+import Task from '../../models/task.model';
 import { SuggestionDocument, toObjectId } from '../../types/mongoose';
+import { taskBreakdownAdapter } from '../ai/adapters/task-breakdown.adapter';
 import { boardService } from '../board/board.service';
 import { chatService } from '../chat/chat.service';
 
@@ -149,25 +153,96 @@ class SuggestionService {
     // Implementation: Process the accepted suggestion based on its type
     try {
       if (suggestion.type === 'board') {
-        // Create the board, columns, and tasks in the database
-        const boardData = suggestion.content as BoardSuggestion;
-        const result = await boardService.createBoardFromSuggestion(
-          suggestion.userId,
-          boardData
-        );
+        // Create a new board from the board suggestion
+        const boardSuggestion = suggestion.content as BoardSuggestion;
+        const userId = suggestion.userId;
 
-        // Store the created board ID in suggestion metadata
-        if (!suggestion.metadata) {
-          suggestion.metadata = {};
+        if (!userId) {
+          throw new Error('User ID is required to create a board');
         }
-        suggestion.metadata.boardId = result.board._id.toString();
-        await suggestion.save();
+
+        await boardService.createBoardFromSuggestion(
+          userId.toString(),
+          boardSuggestion
+        );
       } else if (suggestion.type === 'task-breakdown') {
-        // TODO: Implement task breakdown handling
-        // This would create a task with subtasks
+        // Process task breakdown suggestion
+        const taskBreakdownSuggestion =
+          suggestion.content as TaskBreakdownSuggestion;
+
+        // We need to know which column to add the task to
+        // If metadata contains columnId, use that, otherwise use the first column found
+        let columnId: Types.ObjectId;
+
+        if (suggestion.metadata?.columnId) {
+          columnId = toObjectId(suggestion.metadata.columnId);
+        } else {
+          // Find the first column available (ideally "To Do" or similar)
+          const column = await Column.findOne({});
+          if (!column) {
+            throw new Error('No column found to add task to');
+          }
+          columnId = column._id;
+        }
+
+        // Transform to task document using adapter
+        const { task: taskData, subtasks: subtasksData } =
+          taskBreakdownAdapter.toTaskDocument(
+            taskBreakdownSuggestion,
+            columnId
+          );
+
+        // Create and save the main task
+        const task = new Task({
+          ...taskData,
+          subtasks: [],
+        });
+        await task.save();
+
+        // Create and save subtasks
+        for (const subtaskData of subtasksData) {
+          const subtask = new Subtask({
+            ...subtaskData,
+            taskId: task._id,
+          });
+          await subtask.save();
+
+          // Add subtask to task's subtasks array
+          task.subtasks.push(subtask._id);
+        }
+
+        // Save the task with subtasks references
+        await task.save();
+
+        // Add task to column
+        const column = await Column.findById(columnId);
+        if (column) {
+          column.tasks.push(task._id);
+          await column.save();
+        }
       } else if (suggestion.type === 'task-improvement') {
-        // TODO: Implement task improvement handling
-        // This would update a task's title/description
+        // Process task improvement suggestion
+        const taskImprovementSuggestion =
+          suggestion.content as TaskImprovementSuggestion;
+
+        // Check if we have a task ID in the metadata
+        if (!suggestion.metadata?.taskId) {
+          throw new Error('Task ID is required to improve a task');
+        }
+
+        const taskId = toObjectId(suggestion.metadata.taskId);
+        const task = await Task.findById(taskId);
+
+        if (!task) {
+          throw new Error(`Task with ID ${taskId} not found`);
+        }
+
+        // Update the task with improved content
+        task.title = taskImprovementSuggestion.improvedTask.title;
+        task.description =
+          taskImprovementSuggestion.improvedTask.description || '';
+
+        await task.save();
       }
 
       // If message content is provided, add a new message to the chat session

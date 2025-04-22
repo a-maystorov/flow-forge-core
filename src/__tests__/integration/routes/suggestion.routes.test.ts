@@ -21,6 +21,10 @@ import { connectDB, disconnectDB } from '../../../config/database';
 import { Suggestion, SuggestionStatus } from '../../../models/suggestion.model';
 import User from '../../../models/user.model';
 import { SuggestionDocument } from '../../../types';
+import Board from '../../../models/board.model';
+import Column from '../../../models/column.model';
+import Task from '../../../models/task.model';
+import Subtask from '../../../models/subtask.model';
 
 describe('/api/suggestions', () => {
   let user: InstanceType<typeof User>;
@@ -86,6 +90,10 @@ describe('/api/suggestions', () => {
   afterEach(async () => {
     await User.deleteMany({});
     await Suggestion.deleteMany({});
+    await Board.deleteMany({});
+    await Column.deleteMany({});
+    await Task.deleteMany({});
+    await Subtask.deleteMany({});
   });
 
   describe('GET /:id', () => {
@@ -193,7 +201,9 @@ describe('/api/suggestions', () => {
       const res = await request(app)
         .post(`/api/suggestions/${suggestion._id}/accept`)
         .set('x-auth-token', token)
-        .send({ message: 'I like this suggestion' });
+        .send({
+          message: 'This looks great!',
+        });
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('_id', suggestion._id.toString());
@@ -203,6 +213,25 @@ describe('/api/suggestions', () => {
       const updatedSuggestion = await Suggestion.findById(suggestion._id);
       expect(updatedSuggestion).not.toBeNull();
       expect(updatedSuggestion?.status).toBe('accepted');
+
+      // Verify that board entities were created
+      const boards = await Board.find({});
+      expect(boards.length).toBe(1);
+      expect(boards[0].name).toBe('Test Project Board');
+      expect(boards[0].ownerId.toString()).toBe(user._id.toString());
+
+      // Verify columns
+      const columns = await Column.find({}).sort({ position: 1 });
+      expect(columns.length).toBe(3);
+      expect(columns[0].name).toBe('To Do');
+      expect(columns[1].name).toBe('In Progress');
+      expect(columns[2].name).toBe('Done');
+
+      // Verify tasks
+      const tasks = await Task.find({});
+      expect(tasks.length).toBe(1);
+      expect(tasks[0].title).toBe('Task 1');
+      expect(tasks[0].description).toBe('Task 1 description');
     });
   });
 

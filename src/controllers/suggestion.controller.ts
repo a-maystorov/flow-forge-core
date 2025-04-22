@@ -114,13 +114,14 @@ export class SuggestionController {
   async rejectSuggestion(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { message } = req.body;
+      const { message } = req.body; // Still extract message optionally for chat message
 
       if (!Types.ObjectId.isValid(id)) {
         res.status(400).json({ error: 'Invalid suggestion ID' });
         return;
       }
 
+      // Pass message to service, but it's now optional
       const suggestion = await suggestionService.rejectSuggestion(id, message);
 
       if (!suggestion) {
