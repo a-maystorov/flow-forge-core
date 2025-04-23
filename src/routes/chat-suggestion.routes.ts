@@ -49,6 +49,18 @@ const taskImprovementSchema = z.object({
 });
 
 /**
+ * Validation schema for general question request
+ */
+const generalQuestionSchema = z.object({
+  body: z.object({
+    question: z.string().min(3, 'Question must be at least 3 characters'),
+  }),
+  params: z.object({
+    sessionId: z.string(),
+  }),
+});
+
+/**
  * Request a board suggestion in chat
  * POST /api/chat-suggestions/:sessionId/board
  */
@@ -133,6 +145,34 @@ router.post(
     } catch (error) {
       console.error('Error generating task improvement:', error);
       res.status(500).json({ error: 'Failed to generate task improvement' });
+    }
+  }
+);
+
+/**
+ * Request a general question response in chat
+ * POST /api/chat-suggestions/:sessionId/general-question
+ */
+router.post(
+  '/:sessionId/general-question',
+  auth,
+  validateObjectId('sessionId'),
+  validateRequest(generalQuestionSchema),
+  async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { question } = req.body;
+
+      // Process the general question through the chat assistant
+      const result = await chatAssistantService.processMessage(
+        sessionId,
+        question
+      );
+
+      res.status(200).json(result);
+    } catch (error) {
+      console.error('Error processing general question:', error);
+      res.status(500).json({ error: 'Failed to process question' });
     }
   }
 );

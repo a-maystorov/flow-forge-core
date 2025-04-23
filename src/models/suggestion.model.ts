@@ -22,6 +22,7 @@ export enum SuggestionStatus {
 
 export interface BoardSuggestion {
   boardName: string;
+  thoughtProcess: string;
   columns: {
     name: string;
     position: number;
@@ -32,6 +33,7 @@ export interface BoardSuggestion {
 export interface TaskBreakdownSuggestion {
   taskTitle: string;
   taskDescription: string;
+  thoughtProcess: string;
   subtasks: BaseSubtask[];
 }
 
@@ -44,6 +46,7 @@ export interface TaskImprovementSuggestion {
     title: string;
     description: string;
   };
+  thoughtProcess: string;
   reasoning: string;
 }
 

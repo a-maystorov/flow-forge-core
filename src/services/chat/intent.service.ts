@@ -83,8 +83,10 @@ When analyzing user messages, try to determine their intent:
 - board_suggestion: User wants suggestions for project board structure
 - task_breakdown: User wants to break down a task into subtasks
 - task_improvement: User wants suggestions to improve a task description
-- general_question: General questions about the application or previous suggestions
+- general_question: General questions about the application, capabilities, or previous suggestions
 - unknown: Cannot determine user intent
+
+Pay special attention to identify when users are asking about your capabilities or what you can do. Messages like "What can you do?", "What functionalities do you have?", "How can you help me?", "What features do you offer?" should be classified as general_question with high confidence.
 
 Also extract relevant entities from the message:
 - projectDescription: Description of the project (for board_suggestion)

@@ -28,6 +28,7 @@ export class TaskBreakdownAdapter {
     return {
       taskTitle: taskBreakdown.task.title,
       taskDescription: taskBreakdown.task.description,
+      thoughtProcess: taskBreakdown.thoughtProcess,
       subtasks: taskBreakdown.subtasks.map((subtask) => ({
         id: new Types.ObjectId().toString(),
         title: subtask.title,

@@ -10,8 +10,8 @@ import {
 import {
   BoardDocument,
   ColumnDocument,
-  TaskDocument,
   SubtaskDocument,
+  TaskDocument,
   toObjectId,
 } from '../../../types/mongoose';
 import { BoardSuggestion } from '../templates/board-suggestion.template';
@@ -41,6 +41,7 @@ export class BoardAdapter {
   toSuggestionModel(boardSuggestion: BoardSuggestion): SuggestionBoardType {
     return {
       boardName: boardSuggestion.boardName,
+      thoughtProcess: boardSuggestion.thoughtProcess,
       columns: boardSuggestion.columns.map((column) => ({
         name: column.name,
         position: column.position,

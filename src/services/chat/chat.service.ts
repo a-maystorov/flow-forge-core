@@ -19,18 +19,17 @@ interface CreateChatSessionOptions {
   taskId?: Types.ObjectId | string;
 }
 
-// Message creation options
-interface CreateMessageOptions {
-  sessionId: Types.ObjectId | string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  metadata?: ChatMessageMetadata;
-}
-
 // Typing status options
 interface TypingStatusOptions {
   sessionId: Types.ObjectId | string;
   isTyping: boolean;
+}
+
+interface AddMessageParams {
+  sessionId: Types.ObjectId | string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  metadata?: ChatMessageMetadata;
 }
 
 /**
@@ -132,27 +131,27 @@ class ChatService {
 
   /**
    * Add a message to a chat session
-   * @param options - Message creation options
-   * @returns The created message
+   * @param messageData Message data to add
+   * @returns The created chat message
    */
-  async addMessage(
-    options: CreateMessageOptions
-  ): Promise<ChatMessageDocument> {
-    const { sessionId, role, content, metadata } = options;
-    const typedSessionId =
-      typeof sessionId === 'string' ? sessionId : sessionId.toString();
+  async addMessage({
+    sessionId,
+    role,
+    content,
+    metadata = {},
+  }: AddMessageParams): Promise<ChatMessageDocument> {
+    // Ensure metadata is always an object
+    const safeMetadata = metadata || {};
 
-    // Create the new message
-    const message = new ChatMessage({
-      sessionId: toObjectId(sessionId),
+    // Create the message
+    const message = await ChatMessage.create({
+      sessionId,
       role,
       content,
+      metadata: safeMetadata, // Use the safe metadata
       timestamp: new Date(),
-      metadata: metadata || {},
       status: role === 'user' ? MessageStatus.SENT : MessageStatus.DELIVERED,
     });
-
-    await message.save();
 
     // Update the chat session
     await ChatSession.findByIdAndUpdate(toObjectId(sessionId), {
@@ -163,7 +162,7 @@ class ChatService {
     // Clear typing indicator if this is a user message
     if (role === 'user') {
       this.setTypingStatus({
-        sessionId: typedSessionId,
+        sessionId: sessionId.toString(),
         isTyping: false,
       });
     }

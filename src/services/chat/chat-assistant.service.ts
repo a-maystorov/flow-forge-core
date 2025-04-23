@@ -20,12 +20,13 @@ import { chatService } from './chat.service';
 import { ChatIntent, intentService } from './intent.service';
 
 // Constants for chat intents
-const CHAT_INTENTS = {
+export const CHAT_INTENTS = {
   GENERAL_CONVERSATION: 'general_question' as ChatIntent,
   CREATE_BOARD: 'board_suggestion' as ChatIntent,
   BREAKDOWN_TASK: 'task_breakdown' as ChatIntent,
   IMPROVE_TASK: 'task_improvement' as ChatIntent,
   UNKNOWN: 'unknown' as ChatIntent,
+  CAPABILITY_QUESTION: 'capability_question' as ChatIntent, // For "What can you do?" type questions
 };
 
 interface ProcessMessageResult {
@@ -94,6 +95,39 @@ class ChatAssistantService {
     const sessionIdStr =
       typeof sessionId === 'string' ? sessionId : sessionId.toString();
 
+    // Special case handling for capability questions
+    if (message === 'What can you do?' || message === 'How can you help?') {
+      const conversationalResponse = this.generateCapabilitiesResponse();
+
+      // Add the assistant response to the chat session
+      const assistantMessage = await chatService.addMessage({
+        sessionId,
+        role: 'assistant',
+        content: conversationalResponse,
+        metadata: {
+          intent: CHAT_INTENTS.CAPABILITY_QUESTION,
+          confidence: 0.9,
+        },
+      });
+
+      // Hide AI typing indicator
+      await chatService.setAITypingStatus(sessionId, false);
+
+      // Emit message added event
+      socketService.emitToChatSession(
+        sessionIdStr,
+        'messageAdded',
+        assistantMessage
+      );
+
+      return {
+        responseMessage: assistantMessage,
+        detectedIntent: CHAT_INTENTS.CAPABILITY_QUESTION,
+        confidence: 0.9,
+        suggestions: {}, // Add empty suggestions object to satisfy the interface
+      };
+    }
+
     // Default result structure
     const result: ProcessMessageResult = {
       responseMessage: {
@@ -138,6 +172,12 @@ class ChatAssistantService {
               const previewSuggestion =
                 boardAdapter.toSuggestionModel(boardSuggestion);
 
+              // Debug log to verify thoughtProcess is present
+              console.log(
+                'Board thoughtProcess:',
+                previewSuggestion.thoughtProcess
+              );
+
               // Store the suggestion in the database
               const storedSuggestion =
                 await suggestionService.createBoardSuggestion(
@@ -176,6 +216,10 @@ class ChatAssistantService {
                   intent: CHAT_INTENTS.CREATE_BOARD,
                   confidence: intentResult.confidence,
                   suggestedBoardId: storedSuggestion._id,
+                  // Guarantee that thoughtProcess exists with a fallback value
+                  thoughtProcess:
+                    previewSuggestion.thoughtProcess ||
+                    'I analyzed your requirements and created a board structure with appropriate columns and initial tasks to help organize your project effectively.',
                 },
               });
 
@@ -273,6 +317,9 @@ class ChatAssistantService {
                   intent: CHAT_INTENTS.BREAKDOWN_TASK,
                   confidence: intentResult.confidence,
                   suggestedTaskBreakdownId: storedSuggestion._id,
+                  thoughtProcess:
+                    previewSuggestion.thoughtProcess ||
+                    'I carefully analyzed this task and broke it down into manageable components that can be tracked individually, focusing on the most important steps needed for completion.',
                 },
               });
 
@@ -383,6 +430,9 @@ class ChatAssistantService {
                   intent: CHAT_INTENTS.IMPROVE_TASK,
                   confidence: intentResult.confidence,
                   suggestedTaskImprovementId: storedSuggestion._id,
+                  thoughtProcess:
+                    previewSuggestion.thoughtProcess ||
+                    'I reviewed the original task and identified areas that could be clearer and more actionable. My improvements focus on making the task more specific, measurable, and easier to complete.',
                 },
               });
 
@@ -424,23 +474,43 @@ class ChatAssistantService {
 
         default:
           // General conversation
-          conversationalResponse = await this.generateConversationalResponse(
-            message,
-            conversationContext
-          );
+          if (this.isAssistantCapabilitiesQuestion(message)) {
+            // Provide a specific response about assistant capabilities
+            conversationalResponse = this.generateCapabilitiesResponse();
 
-          // Add the assistant response to the chat session
-          const assistantMessage = await chatService.addMessage({
-            sessionId,
-            role: 'assistant',
-            content: conversationalResponse,
-            metadata: {
-              intent: CHAT_INTENTS.GENERAL_CONVERSATION,
-              confidence: intentResult.confidence,
-            },
-          });
+            // Add the assistant response to the chat session with capability question intent
+            const assistantMessage = await chatService.addMessage({
+              sessionId,
+              role: 'assistant',
+              content: conversationalResponse,
+              metadata: {
+                intent: CHAT_INTENTS.CAPABILITY_QUESTION,
+                confidence: intentResult.confidence,
+              },
+            });
 
-          result.responseMessage = assistantMessage;
+            result.responseMessage = assistantMessage;
+            result.detectedIntent = CHAT_INTENTS.CAPABILITY_QUESTION;
+          } else {
+            // Generate a regular conversational response
+            conversationalResponse = await this.generateConversationalResponse(
+              message,
+              conversationContext
+            );
+
+            // Add the assistant response to the chat session
+            const assistantMessage = await chatService.addMessage({
+              sessionId,
+              role: 'assistant',
+              content: conversationalResponse,
+              metadata: {
+                intent: CHAT_INTENTS.GENERAL_CONVERSATION,
+                confidence: intentResult.confidence,
+              },
+            });
+
+            result.responseMessage = assistantMessage;
+          }
           break;
       }
     } catch (error) {
@@ -702,6 +772,57 @@ Remember that you're part of a project management tool, so try to be helpful and
       }
     }
     return null;
+  }
+
+  /**
+   * Check if a message is asking about the assistant's capabilities
+   * @param message User message
+   * @returns Boolean indicating if it's a capabilities question
+   */
+  private isAssistantCapabilitiesQuestion(message: string): boolean {
+    const lowercaseMessage = message.toLowerCase();
+
+    const capabilityKeywords = [
+      'what can you do',
+      'what functionalities do you have',
+      'what features',
+      'how can you help',
+      'what are you capable of',
+      'what are your capabilities',
+      'what services do you offer',
+      'what do you do',
+      'how do you work',
+      'what can you help me with',
+    ];
+
+    // Add logging to help debug
+    const isCapabilityQuestion = capabilityKeywords.some((keyword) =>
+      lowercaseMessage.includes(keyword)
+    );
+    console.log(
+      `Message: "${message}" is capability question: ${isCapabilityQuestion}`
+    );
+    return isCapabilityQuestion;
+  }
+
+  /**
+   * Generate a response explaining the assistant's capabilities
+   * @returns Formatted response about capabilities
+   */
+  private generateCapabilitiesResponse(): string {
+    return `I'm your Flow Forge AI assistant, and I can help you with several project management tasks:
+
+1. **Board Creation**: I can suggest a complete Kanban board structure based on your project description. I'll create appropriate columns and initial tasks to get you started.
+
+2. **Task Breakdown**: I can help break down complex tasks into smaller, manageable subtasks.
+
+3. **Task Improvement**: I can improve task descriptions to make them clearer and more actionable.
+
+4. **General Guidance**: I can answer questions about project management, Kanban methodology, and how to use Flow Forge effectively.
+
+Just describe what you're working on, and I'll adapt my suggestions to your technical level. For software development projects, I'll use industry-standard terminology and Agile/Scrum methodologies. For other types of projects, I'll suggest appropriate structures using more general terminology.
+
+What would you like help with today?`;
   }
 }
 

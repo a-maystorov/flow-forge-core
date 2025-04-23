@@ -1,5 +1,5 @@
-import request from 'supertest';
 import { jest } from '@jest/globals';
+import request from 'supertest';
 import app from '../../../app';
 import { connectDB, disconnectDB } from '../../../config/database';
 import User from '../../../models/user.model';
@@ -92,6 +92,8 @@ describe('/api/ai', () => {
     it('should return 200 with board suggestions if successful', async () => {
       const mockSuggestion = {
         boardName: 'Test Project Board',
+        thoughtProcess:
+          'I analyzed your project needs and created a board structure that follows standard project management practices.',
         columns: [
           { name: 'To Do', position: 0, tasks: [] },
           { name: 'In Progress', position: 1, tasks: [] },
@@ -161,6 +163,8 @@ describe('/api/ai', () => {
           title: 'Login Feature',
           description: 'Implement user authentication with email and password',
         },
+        thoughtProcess:
+          'I analyzed this task and identified the key steps needed to implement a complete login feature. I focused on both the frontend and backend requirements.',
         subtasks: [
           {
             title: 'Design login form',
@@ -241,6 +245,8 @@ describe('/api/ai', () => {
         title: 'Implement Secure Login',
         description:
           'Implement user authentication with email and password, including two-factor authentication option',
+        thoughtProcess:
+          'I evaluated the original task and noticed it lacked specificity about security requirements. I added details about two-factor authentication to make the implementation more secure and modern.',
       };
 
       mockedAssistantService.improveTaskDescription.mockResolvedValue(

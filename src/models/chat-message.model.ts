@@ -13,6 +13,7 @@ export interface ChatMessageMetadata {
   intent?: string;
   confidence?: number;
   readReceipts?: string[];
+  thoughtProcess?: string; // Add explicit support for thoughtProcess
   [key: string]: unknown; // For any other properties that might be added
 }
 
@@ -67,6 +68,7 @@ const ChatMessageSchema: Schema = new Schema({
     intent: String,
     confidence: Number,
     readReceipts: [String], // Array of user IDs who have read the message
+    thoughtProcess: String, // Add explicit support for thoughtProcess
   },
 });
 

@@ -33,6 +33,9 @@ export class TaskImprovementAdapter {
         title: taskImprovement.title,
         description: taskImprovement.description,
       },
+      thoughtProcess:
+        taskImprovement.thoughtProcess ||
+        'Analysis of the original task to make it clearer and more actionable.',
       reasoning:
         'AI-generated improvement to make the task clearer and more actionable.',
     };
