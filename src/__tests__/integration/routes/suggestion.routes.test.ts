@@ -278,6 +278,178 @@ describe('/api/suggestions', () => {
     });
   });
 
+  describe('POST /batch/accept', () => {
+    let taskImprovementSuggestion1: SuggestionDocument;
+    let taskImprovementSuggestion2: SuggestionDocument;
+    let task1: InstanceType<typeof Task>;
+    let task2: InstanceType<typeof Task>;
+
+    beforeEach(async () => {
+      // Create test tasks
+      task1 = new Task({
+        title: 'Original Task 1',
+        description: 'Original description 1',
+        boardId: new mongoose.Types.ObjectId(),
+        columnId: new mongoose.Types.ObjectId(),
+        userId: user._id,
+      });
+      await task1.save();
+
+      task2 = new Task({
+        title: 'Original Task 2',
+        description: 'Original description 2',
+        boardId: new mongoose.Types.ObjectId(),
+        columnId: new mongoose.Types.ObjectId(),
+        userId: user._id,
+      });
+      await task2.save();
+
+      // Create test task improvement suggestions
+      taskImprovementSuggestion1 = new Suggestion({
+        userId: user._id,
+        sessionId: new mongoose.Types.ObjectId(),
+        type: 'task-improvement',
+        status: SuggestionStatus.PENDING,
+        content: {
+          originalTask: {
+            title: 'Original Task 1',
+            description: 'Original description 1',
+          },
+          improvedTask: {
+            title: 'Improved Task 1',
+            description: 'Improved description 1',
+          },
+          thoughtProcess: 'Thought process for task 1',
+          reasoning: 'Reasoning for task 1',
+        },
+        originalMessage: 'Improve task 1',
+        metadata: {
+          taskId: task1._id,
+          isBatchSuggestion: true,
+          batchId: 'batch-123',
+        },
+      }) as SuggestionDocument;
+      await taskImprovementSuggestion1.save();
+
+      taskImprovementSuggestion2 = new Suggestion({
+        userId: user._id,
+        sessionId: new mongoose.Types.ObjectId(),
+        type: 'task-improvement',
+        status: SuggestionStatus.PENDING,
+        content: {
+          originalTask: {
+            title: 'Original Task 2',
+            description: 'Original description 2',
+          },
+          improvedTask: {
+            title: 'Improved Task 2',
+            description: 'Improved description 2',
+          },
+          thoughtProcess: 'Thought process for task 2',
+          reasoning: 'Reasoning for task 2',
+        },
+        originalMessage: 'Improve task 2',
+        metadata: {
+          taskId: task2._id,
+          isBatchSuggestion: true,
+          batchId: 'batch-123',
+        },
+      }) as SuggestionDocument;
+      await taskImprovementSuggestion2.save();
+    });
+
+    it('should return 401 if user is not authenticated', async () => {
+      const res = await request(app).post('/api/suggestions/batch/accept');
+      expect(res.status).toBe(401);
+    });
+
+    it('should return 400 if no suggestion IDs are provided', async () => {
+      const res = await request(app)
+        .post('/api/suggestions/batch/accept')
+        .set('x-auth-token', token)
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body).toHaveProperty('error', 'Suggestion IDs are required');
+    });
+
+    it('should return 200 and accept all valid suggestions in the batch', async () => {
+      const res = await request(app)
+        .post('/api/suggestions/batch/accept')
+        .set('x-auth-token', token)
+        .query({
+          ids: `${taskImprovementSuggestion1._id.toString()},${taskImprovementSuggestion2._id.toString()}`,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('succeeded');
+      expect(
+        res.body.succeeded.map((s: { _id: { toString: () => string } }) =>
+          s._id.toString()
+        )
+      ).toEqual(
+        expect.arrayContaining([
+          taskImprovementSuggestion1._id.toString(),
+          taskImprovementSuggestion2._id.toString(),
+        ])
+      );
+
+      // Verify suggestions are updated in the database
+      const updatedSuggestion1 = await Suggestion.findById(
+        taskImprovementSuggestion1._id
+      );
+      const updatedSuggestion2 = await Suggestion.findById(
+        taskImprovementSuggestion2._id
+      );
+
+      expect(updatedSuggestion1?.status).toBe('accepted');
+      expect(updatedSuggestion2?.status).toBe('accepted');
+
+      // Verify tasks are updated in the database
+      const updatedTask1 = await Task.findById(task1._id);
+      const updatedTask2 = await Task.findById(task2._id);
+
+      expect(updatedTask1?.title).toBe('Improved Task 1');
+      expect(updatedTask1?.description).toBe('Improved description 1');
+      expect(updatedTask2?.title).toBe('Improved Task 2');
+      expect(updatedTask2?.description).toBe('Improved description 2');
+    });
+
+    it('should handle a mix of valid and invalid suggestion IDs', async () => {
+      const invalidId = new mongoose.Types.ObjectId().toString();
+
+      const res = await request(app)
+        .post('/api/suggestions/batch/accept')
+        .set('x-auth-token', token)
+        .query({
+          ids: `${taskImprovementSuggestion1._id.toString()},${invalidId}`,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('succeeded');
+      expect(
+        res.body.succeeded.map((s: { _id: { toString: () => string } }) =>
+          s._id.toString()
+        )
+      ).toEqual([taskImprovementSuggestion1._id.toString()]);
+      expect(res.body).toHaveProperty('failed');
+      expect(res.body.failed.map((f: { id: string }) => f.id)).toContain(
+        invalidId
+      );
+
+      // Verify only the valid suggestion was updated
+      const updatedSuggestion1 = await Suggestion.findById(
+        taskImprovementSuggestion1._id
+      );
+      const updatedSuggestion2 = await Suggestion.findById(
+        taskImprovementSuggestion2._id
+      );
+
+      expect(updatedSuggestion1?.status).toBe('accepted');
+      expect(updatedSuggestion2?.status).toBe('pending'); // Should still be pending
+    });
+  });
+
   describe('PUT /:id', () => {
     it('should return 401 if user is not authenticated', async () => {
       const res = await request(app).put(`/api/suggestions/${suggestion._id}`);

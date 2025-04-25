@@ -9,6 +9,10 @@ export interface IChatSession {
   context: {
     boardId?: Types.ObjectId;
     taskId?: Types.ObjectId;
+    activeTaskIds?: Types.ObjectId[];
+    activeSuggestionIds?: Types.ObjectId[];
+    contextMode?: 'single' | 'multi' | 'board';
+    lastAction?: 'improvement' | 'breakdown' | 'creation';
     currentIntent?: string;
   };
 }
@@ -49,6 +53,26 @@ const ChatSessionSchema: Schema = new Schema({
     taskId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Task',
+    },
+    activeTaskIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Task',
+      },
+    ],
+    activeSuggestionIds: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Suggestion',
+      },
+    ],
+    contextMode: {
+      type: String,
+      enum: ['single', 'multi', 'board'],
+    },
+    lastAction: {
+      type: String,
+      enum: ['improvement', 'breakdown', 'creation'],
     },
     currentIntent: String,
   },

@@ -227,22 +227,40 @@ class SuggestionService {
 
         // Check if we have a task ID in the metadata
         if (!suggestion.metadata?.taskId) {
-          throw new Error('Task ID is required to improve a task');
+          // If there's no taskId in metadata, check if this is a batch suggestion
+          if (suggestion.metadata?.isBatchSuggestion) {
+            console.log(
+              `Processing batch suggestion ${suggestion._id} as part of batch ${suggestion.metadata.batchId}`
+            );
+            // Continue with acceptance without trying to update a task
+            // This is valid for batch suggestions when accepting individually
+          } else {
+            console.log(
+              'No task ID found in metadata, treating as a generic task improvement without a specific task to update'
+            );
+            // Just acknowledge that the suggestion was accepted without trying to update a task
+            // This allows the user to manually create a new task with the improvements
+          }
+        } else {
+          // If we have a task ID, proceed with updating the existing task
+          const taskId = toObjectId(suggestion.metadata.taskId);
+          const task = await Task.findById(taskId);
+
+          if (!task) {
+            throw new Error(`Task with ID ${taskId} not found`);
+          }
+
+          // Update the task with improved content
+          task.title = taskImprovementSuggestion.improvedTask.title;
+          task.description =
+            taskImprovementSuggestion.improvedTask.description || '';
+
+          await task.save();
+
+          console.log(
+            `Successfully updated task ${taskId} with improved content`
+          );
         }
-
-        const taskId = toObjectId(suggestion.metadata.taskId);
-        const task = await Task.findById(taskId);
-
-        if (!task) {
-          throw new Error(`Task with ID ${taskId} not found`);
-        }
-
-        // Update the task with improved content
-        task.title = taskImprovementSuggestion.improvedTask.title;
-        task.description =
-          taskImprovementSuggestion.improvedTask.description || '';
-
-        await task.save();
       }
 
       // If message content is provided, add a new message to the chat session
@@ -376,6 +394,106 @@ class SuggestionService {
     }
 
     return null;
+  }
+
+  /**
+   * Create multiple task improvement suggestions in a batch
+   * @param userId User ID
+   * @param sessionId Chat session ID
+   * @param improvements Array of task IDs and their improvement suggestions
+   * @param originalMessage Original user message that triggered the improvements
+   * @returns Array of created suggestion documents
+   */
+  async createBatchTaskImprovementSuggestions(
+    userId: string | Types.ObjectId,
+    sessionId: string | Types.ObjectId,
+    improvements: Array<{
+      taskId: string | Types.ObjectId;
+      content: TaskImprovementSuggestion;
+    }>,
+    originalMessage: string
+  ): Promise<SuggestionDocument[]> {
+    // Create a batch ID to group these suggestions
+    const batchId = new Types.ObjectId().toString();
+
+    // Create all suggestions with batch metadata
+    const suggestions: SuggestionDocument[] = [];
+
+    for (const { taskId, content } of improvements) {
+      const suggestion = new Suggestion({
+        userId: toObjectId(userId),
+        sessionId: toObjectId(sessionId),
+        type: 'task-improvement',
+        status: SuggestionStatus.PENDING,
+        content,
+        originalMessage,
+        metadata: {
+          taskId: taskId.toString(),
+          isBatchSuggestion: true,
+          batchId,
+        },
+      });
+
+      await suggestion.save();
+      suggestions.push(suggestion as SuggestionDocument);
+    }
+
+    return suggestions;
+  }
+
+  /**
+   * Accept multiple suggestions in a batch
+   * @param suggestionIds Array of suggestion IDs to accept
+   * @param messageContent Optional message to add to chat
+   * @returns Object containing succeeded and failed suggestions
+   */
+  async acceptBatchSuggestions(
+    suggestionIds: (string | Types.ObjectId)[],
+    messageContent?: string
+  ): Promise<{
+    succeeded: SuggestionDocument[];
+    failed: { id: string; error: string }[];
+  }> {
+    const results = {
+      succeeded: [] as SuggestionDocument[],
+      failed: [] as { id: string; error: string }[],
+    };
+
+    // Process each suggestion
+    for (const suggestionId of suggestionIds) {
+      try {
+        const suggestion = await this.acceptSuggestion(
+          suggestionId,
+          messageContent
+        );
+        if (suggestion) {
+          results.succeeded.push(suggestion);
+        } else {
+          results.failed.push({
+            id: suggestionId.toString(),
+            error: 'Suggestion not found',
+          });
+        }
+      } catch (error) {
+        results.failed.push({
+          id: suggestionId.toString(),
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Get all suggestions belonging to the same batch
+   * @param batchId Batch ID
+   * @returns Array of suggestions in the batch
+   */
+  async getSuggestionsByBatch(batchId: string): Promise<SuggestionDocument[]> {
+    return Suggestion.find({
+      'metadata.batchId': batchId,
+    }).sort({ createdAt: -1 }) as Promise<SuggestionDocument[]>;
   }
 }
 

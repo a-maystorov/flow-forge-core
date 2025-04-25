@@ -19,6 +19,10 @@ router.get(
   (req, res) => suggestionController.getSuggestionsBySession(req, res)
 );
 
+router.post('/batch/accept', auth, (req, res) =>
+  suggestionController.acceptBatchSuggestions(req, res)
+);
+
 router.post('/:id/accept', auth, validateObjectId('id'), (req, res) =>
   suggestionController.acceptSuggestion(req, res)
 );

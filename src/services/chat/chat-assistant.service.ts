@@ -10,6 +10,7 @@ import {
   TaskBreakdownSuggestion,
   TaskImprovementSuggestion,
 } from '../../models/suggestion.model';
+import Task from '../../models/task.model';
 import { boardAdapter } from '../ai/adapters/board.adapter';
 import { taskBreakdownAdapter } from '../ai/adapters/task-breakdown.adapter';
 import { taskImprovementAdapter } from '../ai/adapters/task-improvement.adapter';
@@ -18,6 +19,7 @@ import { openAIService } from '../ai/openai.service';
 import { suggestionService } from '../suggestion/suggestion.service';
 import { chatService } from './chat.service';
 import { ChatIntent, intentService } from './intent.service';
+import { taskResolutionService } from './task-resolution.service';
 
 // Constants for chat intents
 export const CHAT_INTENTS = {
@@ -41,6 +43,7 @@ interface ProcessMessageResult {
   };
   confidence: number;
   suggestionId?: string;
+  batchSuggestionIds?: string[];
 }
 
 /**
@@ -361,6 +364,10 @@ class ChatAssistantService {
 
         case CHAT_INTENTS.IMPROVE_TASK:
           if (intentResult.confidence >= 0.6) {
+            // Check if this is a multi-task request
+            const isMultiTaskRequest =
+              taskResolutionService.isMultiTaskRequest(message);
+
             // Send typing indicator for suggestion generation
             socketService.emitToChatSession(
               sessionIdStr,
@@ -371,104 +378,292 @@ class ChatAssistantService {
               }
             );
 
-            // Extract task title and description (if any)
-            const taskTitle = message;
-            const taskDescription = '';
+            if (isMultiTaskRequest) {
+              // Handle multi-task improvement flow
+              const taskIds =
+                await taskResolutionService.resolveTasksFromMessage(
+                  message,
+                  sessionId
+                );
 
-            // Generate task improvement using AI
-            const taskImprovement = await this.improveTaskDescription(
-              taskTitle,
-              taskDescription
-            );
+              if (taskIds.length === 0) {
+                // No tasks found - handle as generic improvement without context
+                const taskTitle = message;
+                const taskDescription = '';
 
-            if (taskImprovement) {
-              // Send preview of the suggestion being generated
-              const previewSuggestion =
-                taskImprovementAdapter.toSuggestionModel(
-                  taskImprovement,
+                // Continue with standard single task flow
+                const taskImprovement = await this.improveTaskDescription(
                   taskTitle,
                   taskDescription
                 );
 
-              // Store the suggestion in the database
-              const storedSuggestion =
-                await suggestionService.createTaskImprovementSuggestion(
-                  chatSession.userId,
-                  sessionId,
-                  previewSuggestion,
-                  message
+                if (taskImprovement) {
+                  // Process as normal single improvement
+                  const previewSuggestion =
+                    taskImprovementAdapter.toSuggestionModel(
+                      taskImprovement,
+                      taskTitle,
+                      taskDescription
+                    );
+
+                  // Rest of existing single task flow
+                  const storedSuggestion =
+                    await suggestionService.createTaskImprovementSuggestion(
+                      chatSession.userId,
+                      sessionId,
+                      previewSuggestion,
+                      message
+                    );
+
+                  const suggestionId = (
+                    storedSuggestion._id as Types.ObjectId
+                  ).toString();
+                  result.suggestionId = suggestionId;
+                  result.suggestions.taskImprovement = previewSuggestion;
+
+                  // Emit the suggestion preview via WebSocket
+                  socketService.emitSuggestionPreview(
+                    sessionIdStr,
+                    suggestionId,
+                    'task-improvement' as const,
+                    previewSuggestion
+                  );
+
+                  const formattedResponse = this.formatTaskImprovementResponse(
+                    taskTitle,
+                    taskDescription,
+                    previewSuggestion,
+                    suggestionId
+                  );
+
+                  // Add the assistant response to the chat session
+                  const assistantMessage = await chatService.addMessage({
+                    sessionId,
+                    role: 'assistant',
+                    content: formattedResponse,
+                    metadata: {
+                      intent: CHAT_INTENTS.IMPROVE_TASK,
+                      confidence: intentResult.confidence,
+                      suggestedTaskImprovementId: storedSuggestion._id,
+                      thoughtProcess:
+                        previewSuggestion.thoughtProcess ||
+                        'I reviewed the original task and identified areas that could be clearer and more actionable.',
+                    },
+                  });
+
+                  result.responseMessage = assistantMessage;
+                }
+              } else {
+                // Found multiple tasks to improve
+                // Gather task details
+                const taskDetails = await Promise.all(
+                  taskIds.map(async (id) => {
+                    const task = await Task.findById(id);
+                    return {
+                      id: task?._id,
+                      title: task?.title || '',
+                      description: task?.description || '',
+                    };
+                  })
                 );
 
-              // Properly handle Mongoose ObjectId
-              const suggestionId = (
-                storedSuggestion._id as Types.ObjectId
-              ).toString();
-              result.suggestionId = suggestionId;
-              result.suggestions.taskImprovement = previewSuggestion;
+                // Generate improvements for all tasks
+                const improvements = await Promise.all(
+                  taskDetails.map((task) =>
+                    this.improveTaskDescription(task.title, task.description)
+                  )
+                );
 
-              // Emit the suggestion preview via WebSocket
-              socketService.emitSuggestionPreview(
-                sessionIdStr,
-                suggestionId,
-                'task-improvement' as const,
-                previewSuggestion
-              );
+                // Create batch suggestions data, filtering out any invalid tasks or improvements
+                const improvementData = taskDetails
+                  .map((task, index) => {
+                    const improvement = improvements[index];
+                    // Only include if both task.id and improvement are valid
+                    if (task.id && improvement) {
+                      // Transform to the expected suggestion format
+                      const transformedContent: TaskImprovementSuggestion = {
+                        originalTask: {
+                          title: task.title,
+                          description: task.description || '',
+                        },
+                        improvedTask: {
+                          title: improvement.title,
+                          description: improvement.description,
+                        },
+                        thoughtProcess: improvement.thoughtProcess,
+                        reasoning: improvement.thoughtProcess,
+                      };
 
-              const formattedResponse = this.formatTaskImprovementResponse(
-                taskTitle,
-                taskDescription,
-                previewSuggestion,
-                suggestionId
-              );
+                      return {
+                        taskId: task.id,
+                        content: transformedContent,
+                      };
+                    }
+                    return null;
+                  })
+                  .filter(
+                    (
+                      item
+                    ): item is {
+                      taskId: Types.ObjectId;
+                      content: TaskImprovementSuggestion;
+                    } => item !== null
+                  );
 
-              // Add the assistant response to the chat session
-              const assistantMessage = await chatService.addMessage({
-                sessionId,
-                role: 'assistant',
-                content: formattedResponse,
-                metadata: {
-                  intent: CHAT_INTENTS.IMPROVE_TASK,
-                  confidence: intentResult.confidence,
-                  suggestedTaskImprovementId: storedSuggestion._id,
-                  thoughtProcess:
-                    previewSuggestion.thoughtProcess ||
-                    'I reviewed the original task and identified areas that could be clearer and more actionable. My improvements focus on making the task more specific, measurable, and easier to complete.',
-                },
-              });
+                // Only proceed if we have valid improvements
+                if (improvementData.length > 0) {
+                  const batchSuggestions =
+                    await suggestionService.createBatchTaskImprovementSuggestions(
+                      chatSession.userId,
+                      sessionId,
+                      improvementData,
+                      message
+                    );
 
-              result.responseMessage = assistantMessage;
+                  // Update session context with multiple task IDs
+                  await chatService.updateChatSession(sessionId, {
+                    context: {
+                      activeTaskIds: taskIds,
+                      contextMode: 'multi',
+                      lastAction: 'improvement',
+                    },
+                  });
+
+                  // Format multi-task response
+                  const formattedResponse =
+                    this.formatMultipleTaskImprovementResponse(
+                      taskDetails
+                        .filter((task, index) => task.id && improvements[index])
+                        .map((task) => ({
+                          id: task.id!,
+                          title: task.title,
+                          description: task.description,
+                        })),
+                      improvementData
+                        .filter((item) => item !== null)
+                        .map((item) => item.content),
+                      batchSuggestions.map((s) => s._id.toString())
+                    );
+
+                  // Add the assistant response to the chat session
+                  const assistantMessage = await chatService.addMessage({
+                    sessionId,
+                    role: 'assistant',
+                    content: formattedResponse,
+                    metadata: {
+                      intent: CHAT_INTENTS.IMPROVE_TASK,
+                      confidence: intentResult.confidence,
+                      batchSuggestionIds: batchSuggestions.map((s) => s._id),
+                      isMultiTaskSuggestion: true,
+                    },
+                  });
+
+                  result.responseMessage = assistantMessage;
+                  result.suggestions = {
+                    // Use only the first suggestion for consistency with the interface
+                    taskImprovement: batchSuggestions[0]
+                      .content as TaskImprovementSuggestion,
+                  };
+                  result.batchSuggestionIds = batchSuggestions.map((s) =>
+                    s._id.toString()
+                  );
+                } else {
+                  // No valid improvements could be generated
+                  const conversationalResponse =
+                    "I wasn't able to generate improvements for any of the tasks. " +
+                    "Could you provide more specific details about what you'd like to improve?";
+
+                  const assistantMessage = await chatService.addMessage({
+                    sessionId,
+                    role: 'assistant',
+                    content: conversationalResponse,
+                    metadata: {
+                      intent: CHAT_INTENTS.IMPROVE_TASK,
+                      confidence: intentResult.confidence,
+                    },
+                  });
+
+                  result.responseMessage = assistantMessage;
+                }
+              }
             } else {
-              conversationalResponse =
-                "I'm sorry, I wasn't able to improve that task. Could you provide more details?";
+              // Extract task title and description (if any)
+              const taskTitle = message;
+              const taskDescription = '';
 
-              // Add the assistant response to the chat session
-              const assistantMessage = await chatService.addMessage({
-                sessionId,
-                role: 'assistant',
-                content: conversationalResponse,
-              });
+              // Generate task improvement using AI
+              const taskImprovement = await this.improveTaskDescription(
+                taskTitle,
+                taskDescription
+              );
 
-              result.responseMessage = assistantMessage;
+              if (taskImprovement) {
+                // Send preview of the suggestion being generated
+                const previewSuggestion =
+                  taskImprovementAdapter.toSuggestionModel(
+                    taskImprovement,
+                    taskTitle,
+                    taskDescription
+                  );
+
+                // Check if there's an active task in the session context
+                const taskId = chatSession.context?.taskId;
+                let metadata = {};
+                if (taskId) {
+                  metadata = { taskId: taskId.toString() };
+                }
+
+                // Store the suggestion in the database
+                const storedSuggestion =
+                  await suggestionService.createTaskImprovementSuggestion(
+                    chatSession.userId,
+                    sessionId,
+                    previewSuggestion,
+                    message,
+                    undefined, // No related suggestion
+                    metadata // Include task ID if available
+                  );
+
+                // Properly handle Mongoose ObjectId
+                const suggestionId = (
+                  storedSuggestion._id as Types.ObjectId
+                ).toString();
+                result.suggestionId = suggestionId;
+                result.suggestions.taskImprovement = previewSuggestion;
+
+                // Emit the suggestion preview via WebSocket
+                socketService.emitSuggestionPreview(
+                  sessionIdStr,
+                  suggestionId,
+                  'task-improvement' as const,
+                  previewSuggestion
+                );
+
+                const formattedResponse = this.formatTaskImprovementResponse(
+                  taskTitle,
+                  taskDescription,
+                  previewSuggestion,
+                  suggestionId
+                );
+
+                // Add the assistant response to the chat session
+                const assistantMessage = await chatService.addMessage({
+                  sessionId,
+                  role: 'assistant',
+                  content: formattedResponse,
+                  metadata: {
+                    intent: CHAT_INTENTS.IMPROVE_TASK,
+                    confidence: intentResult.confidence,
+                    suggestedTaskImprovementId: storedSuggestion._id,
+                    thoughtProcess:
+                      previewSuggestion.thoughtProcess ||
+                      'I reviewed the original task and identified areas that could be clearer and more actionable.',
+                  },
+                });
+
+                result.responseMessage = assistantMessage;
+              }
             }
-          } else {
-            // Low confidence - use conversational fallback
-            conversationalResponse = await this.generateConversationalResponse(
-              message,
-              conversationContext
-            );
-
-            // Add the assistant response to the chat session
-            const assistantMessage = await chatService.addMessage({
-              sessionId,
-              role: 'assistant',
-              content: conversationalResponse,
-              metadata: {
-                intent: CHAT_INTENTS.GENERAL_CONVERSATION,
-                confidence: intentResult.confidence,
-              },
-            });
-
-            result.responseMessage = assistantMessage;
           }
           break;
 
@@ -714,64 +909,53 @@ Remember that you're part of a project management tool, so try to be helpful and
   }
 
   /**
-   * Format a task improvement for a specific task from a board suggestion
-   * @param originalTaskTitle Original task title
-   * @param originalTaskDescription Original task description (can be empty)
-   * @param suggestion Task improvement suggestion
-   * @param columnName Column name where the task exists
-   * @param suggestionId Suggestion ID
-   * @returns Formatted response
+   * Format multiple task improvement suggestions into a user-friendly response
+   * @param originalTasks Array of original task information
+   * @param improvements Array of improvement suggestions
+   * @param suggestionIds Array of suggestion IDs
+   * @returns Formatted response string
    */
-  private formatSpecificTaskImprovementResponse(
-    originalTaskTitle: string,
-    originalTaskDescription: string,
-    suggestion: TaskImprovementSuggestion,
-    columnName: string,
-    suggestionId: string
+  private formatMultipleTaskImprovementResponse(
+    originalTasks: Array<{
+      id: Types.ObjectId;
+      title: string;
+      description: string;
+    }>,
+    improvements: TaskImprovementSuggestion[],
+    suggestionIds: string[]
   ): string {
-    let response = `I've improved the task "${originalTaskTitle}" from the ${columnName} column:\n\n`;
+    let response = `I've improved ${originalTasks.length} tasks:\n\n`;
 
-    response += `**Original Title:** ${originalTaskTitle}\n`;
-    response += `**Improved Title:** ${suggestion.improvedTask.title}\n\n`;
+    originalTasks.forEach((task, index) => {
+      const improvement = improvements[index];
+      const suggestionId = suggestionIds[index];
 
-    if (originalTaskDescription || suggestion.improvedTask.description) {
-      if (originalTaskDescription) {
-        response += `**Original Description:**\n${originalTaskDescription}\n\n`;
+      response += `### Task ${index + 1}: ${task.title}\n\n`;
+      response += `**Original Title:** ${task.title}\n`;
+      response += `**Improved Title:** ${improvement.improvedTask.title}\n\n`;
+
+      if (task.description || improvement.improvedTask.description) {
+        if (task.description) {
+          response += `**Original Description:**\n${task.description}\n\n`;
+        }
+        response += `**Improved Description:**\n${improvement.improvedTask.description}\n\n`;
       }
-      response += `**Improved Description:**\n${suggestion.improvedTask.description}\n\n`;
-    }
 
-    // Add reasoning if available
-    if (suggestion.reasoning) {
-      response += `**Reasoning:**\n${suggestion.reasoning}\n\n`;
-    }
+      // Add reasoning if available
+      if (improvement.reasoning) {
+        response += `**Reasoning:**\n${improvement.reasoning}\n\n`;
+      }
 
-    response += 'Would you like to use these improvements?';
-    response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
+      // Add acceptance links for individual suggestion
+      response += `[Accept This Improvement](/api/suggestions/${suggestionId}/accept) | [Reject This Improvement](/api/suggestions/${suggestionId}/reject)\n\n`;
+    });
+
+    // Add batch acceptance option if there are multiple suggestions
+    if (suggestionIds.length > 1) {
+      response += `\n[Accept All Improvements](/api/suggestions/batch/accept?ids=${suggestionIds.join(',')})`;
+    }
 
     return response;
-  }
-
-  /**
-   * Find a task in a board suggestion by task ID
-   * @param boardSuggestion Board suggestion
-   * @param taskId Task ID
-   * @returns Task and column name if found, otherwise null
-   */
-  private findTaskInBoardSuggestion(
-    boardSuggestion: BoardSuggestion,
-    taskId: string
-  ): {
-    task: { title: string; description: string };
-    columnName: string;
-  } | null {
-    for (const column of boardSuggestion.columns) {
-      const task = column.tasks.find((t) => t.id === taskId);
-      if (task) {
-        return { task, columnName: column.name };
-      }
-    }
-    return null;
   }
 
   /**

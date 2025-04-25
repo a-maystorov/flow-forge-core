@@ -184,6 +184,48 @@ export class SuggestionController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+  /**
+   * Accept multiple suggestions in a batch
+   */
+  async acceptBatchSuggestions(req: Request, res: Response): Promise<void> {
+    try {
+      const { ids } = req.query;
+      const { message } = req.body;
+
+      if (!ids || typeof ids !== 'string') {
+        res.status(400).json({ error: 'Suggestion IDs are required' });
+        return;
+      }
+
+      const suggestionIds = ids.split(',');
+
+      // Validate all IDs
+      if (!suggestionIds.every((id) => Types.ObjectId.isValid(id))) {
+        res.status(400).json({ error: 'Invalid suggestion ID format' });
+        return;
+      }
+
+      const results = await suggestionService.acceptBatchSuggestions(
+        suggestionIds,
+        message
+      );
+
+      // Emit event for each successfully accepted suggestion
+      for (const suggestion of results.succeeded) {
+        socketService.emitSuggestionStatusUpdate(
+          suggestion.sessionId.toString(),
+          suggestion._id.toString(),
+          'accepted' as SuggestionStatus
+        );
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error('Error accepting batch suggestions:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 }
 
 export const suggestionController = new SuggestionController();

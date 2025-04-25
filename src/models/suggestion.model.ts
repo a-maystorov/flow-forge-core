@@ -56,6 +56,8 @@ export interface SuggestionMetadata {
   columnId?: string;
   parentTaskId?: string;
   relatedSuggestionId?: string | Types.ObjectId;
+  isBatchSuggestion?: boolean;
+  batchId?: string;
 }
 
 export interface ISuggestion extends Document {
@@ -110,6 +112,8 @@ const SuggestionSchema = new Schema<ISuggestion>(
       columnId: String,
       parentTaskId: String,
       relatedSuggestionId: { type: Schema.Types.ObjectId, ref: 'Suggestion' },
+      isBatchSuggestion: Boolean,
+      batchId: String,
     },
     relatedSuggestionId: {
       type: Schema.Types.ObjectId,
