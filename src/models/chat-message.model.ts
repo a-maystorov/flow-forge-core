@@ -1,4 +1,5 @@
 import mongoose, { Schema, Types } from 'mongoose';
+import { BoardSuggestion } from './suggestion.model';
 
 export enum MessageStatus {
   SENT = 'sent',
@@ -13,8 +14,9 @@ export interface ChatMessageMetadata {
   intent?: string;
   confidence?: number;
   readReceipts?: string[];
-  thoughtProcess?: string; // Add explicit support for thoughtProcess
-  [key: string]: unknown; // For any other properties that might be added
+  thoughtProcess?: string;
+  boardContext?: BoardSuggestion;
+  [key: string]: unknown;
 }
 
 export interface IChatMessage {
@@ -69,6 +71,7 @@ const ChatMessageSchema: Schema = new Schema({
     confidence: Number,
     readReceipts: [String], // Array of user IDs who have read the message
     thoughtProcess: String, // Add explicit support for thoughtProcess
+    boardContext: { type: Schema.Types.Mixed }, // Store the board suggestion for context in conversations
   },
 });
 

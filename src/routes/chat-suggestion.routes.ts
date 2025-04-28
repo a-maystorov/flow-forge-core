@@ -4,6 +4,7 @@ import auth from '../middleware/auth.middleware';
 import validateObjectId from '../middleware/validateObjectId.middleware';
 import validateRequest from '../middleware/validateRequest.middleware';
 import { chatAssistantService } from '../services/chat/chat-assistant.service';
+import { chatService } from '../services/chat/chat.service';
 
 const router = express.Router();
 
@@ -102,10 +103,33 @@ router.post(
       const { sessionId } = req.params;
       const { taskDescription } = req.body;
 
+      // Get the recent conversation context to check for board context
+      const conversationContext = await chatService.getConversationContext(
+        sessionId,
+        10
+      );
+
+      // Start with the original task description
+      let message = taskDescription;
+
+      // Check if there was a recent board suggestion and add it to the request
+      for (let i = conversationContext.length - 1; i >= 0; i--) {
+        const msg = conversationContext[i];
+        if (
+          msg.role === 'assistant' &&
+          msg.metadata?.boardContext &&
+          msg.metadata?.intent === 'board_suggestion'
+        ) {
+          // Add context about the board to help the AI
+          message = `I want to break down this task from the "${msg.metadata.boardContext.boardName}" board we discussed earlier.\n\n${message}`;
+          break;
+        }
+      }
+
       // Process the task breakdown request through the chat assistant
       const result = await chatAssistantService.processMessage(
         sessionId,
-        taskDescription
+        message
       );
 
       res.status(200).json(result);
@@ -130,10 +154,31 @@ router.post(
       const { sessionId } = req.params;
       const { taskTitle, taskDescription = '' } = req.body;
 
-      // Format the request as a message
-      const message = `${taskTitle}${
+      // Get the recent conversation context to check for board context
+      const conversationContext = await chatService.getConversationContext(
+        sessionId,
+        10
+      );
+
+      // Format the request as a message, potentially enhancing it with board context
+      let message = `${taskTitle}${
         taskDescription ? `\n\n${taskDescription}` : ''
       }`;
+
+      // Check if there was a recent board suggestion and add it to the request
+      // This helps the AI understand that we're trying to improve tasks from a specific board
+      for (let i = conversationContext.length - 1; i >= 0; i--) {
+        const msg = conversationContext[i];
+        if (
+          msg.role === 'assistant' &&
+          msg.metadata?.boardContext &&
+          msg.metadata?.intent === 'board_suggestion'
+        ) {
+          // Add context about the board to help the AI
+          message = `I want to improve this task from the "${msg.metadata.boardContext.boardName}" board we discussed earlier.\n\n${message}`;
+          break;
+        }
+      }
 
       // Process the task improvement request through the chat assistant
       const result = await chatAssistantService.processMessage(

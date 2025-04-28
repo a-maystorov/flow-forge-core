@@ -5,6 +5,7 @@ import {
   ChatCompletionUserMessageParam,
 } from 'openai/resources/chat';
 import { socketService } from '../../config/socket';
+import { ChatMessageMetadata } from '../../models/chat-message.model';
 import {
   BoardSuggestion,
   TaskBreakdownSuggestion,
@@ -223,6 +224,8 @@ class ChatAssistantService {
                   thoughtProcess:
                     previewSuggestion.thoughtProcess ||
                     'I analyzed your requirements and created a board structure with appropriate columns and initial tasks to help organize your project effectively.',
+                  // Add board suggestion to maintain context in future conversations
+                  boardContext: previewSuggestion,
                 },
               });
 
@@ -737,9 +740,28 @@ class ChatAssistantService {
    */
   private async generateConversationalResponse(
     message: string,
-    conversationContext: { role: string; content: string }[]
+    conversationContext: {
+      role: string;
+      content: string;
+      metadata?: ChatMessageMetadata;
+    }[]
   ): Promise<string> {
     try {
+      // Check for board context in previous messages
+      let boardContextInfo = '';
+      for (let i = conversationContext.length - 1; i >= 0; i--) {
+        const msg = conversationContext[i];
+        if (
+          msg.role === 'assistant' &&
+          msg.metadata?.boardContext &&
+          msg.metadata?.intent === CHAT_INTENTS.CREATE_BOARD
+        ) {
+          const boardSuggestion = msg.metadata.boardContext as BoardSuggestion;
+          boardContextInfo = `\nPreviously, I suggested a board named "${boardSuggestion.boardName}" with the following columns: ${boardSuggestion.columns.map((col) => `"${col.name}"`).join(', ')}. The board has ${boardSuggestion.columns.reduce((sum, col) => sum + col.tasks.length, 0)} tasks distributed across these columns. When responding to board-related queries, refer to this board suggestion and provide relevant advice or modifications based on the user's requests.`;
+          break;
+        }
+      }
+
       // Create a system prompt for conversational responses
       const systemPrompt = {
         role: 'system',
@@ -754,7 +776,7 @@ You can help with:
 - Explaining features
 - Suggesting improvements for tasks and workflows
 
-Remember that you're part of a project management tool, so try to be helpful and relevant.`,
+Remember that you're part of a project management tool, so try to be helpful and relevant.${boardContextInfo}`,
       } as ChatCompletionSystemMessageParam;
 
       // Convert conversation context to compatible format
@@ -833,8 +855,17 @@ Remember that you're part of a project management tool, so try to be helpful and
       response += '\n';
     });
 
+    // Add more conversational guidance to encourage interaction about the board
     response +=
-      '\nWould you like to use this board structure or make some changes to it? You can accept or reject this suggestion.';
+      "I've designed this board based on your project description. What do you think about it?\n\n";
+    response += 'You can:\n';
+    response += '- Ask me to add more tasks or columns\n';
+    response += '- Request changes to the existing structure\n';
+    response += '- Get more details about any task\n';
+    response += '- Or accept the board as-is\n\n';
+
+    response +=
+      'Would you like to use this board structure or make some changes to it?';
     response += `\n\n[Accept Suggestion](/api/suggestions/${suggestionId}/accept) | [Reject Suggestion](/api/suggestions/${suggestionId}/reject)`;
 
     return response;

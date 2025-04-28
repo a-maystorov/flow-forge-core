@@ -197,7 +197,9 @@ class ChatService {
   async getConversationContext(
     sessionId: Types.ObjectId | string,
     limit = 10
-  ): Promise<Array<{ role: string; content: string }>> {
+  ): Promise<
+    Array<{ role: string; content: string; metadata?: ChatMessageMetadata }>
+  > {
     const messages = await ChatMessage.find({
       sessionId: toObjectId(sessionId),
     })
@@ -208,6 +210,7 @@ class ChatService {
     return messages.reverse().map((msg) => ({
       role: msg.role,
       content: msg.content,
+      metadata: msg.metadata || {},
     }));
   }
 
