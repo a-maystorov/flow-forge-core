@@ -29,12 +29,11 @@ describe('/api/boards', () => {
     await Subtask.deleteMany({});
   });
 
-  const createUserAndToken = async (isGuest = false) => {
+  const createUserAndToken = async (withEmail = true) => {
     user = new User({
-      email: isGuest ? undefined : 'test@example.com',
-      password: isGuest ? undefined : 'password123',
-      username: isGuest ? undefined : 'testuser',
-      isGuest,
+      email: withEmail ? 'test@example.com' : undefined,
+      password: withEmail ? 'password123' : undefined,
+      username: withEmail ? 'testuser' : undefined,
     });
 
     await user.save();
@@ -151,30 +150,28 @@ describe('/api/boards', () => {
       expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
     });
 
-    describe('guest user', () => {
+    describe('unregistered user (no email)', () => {
       beforeEach(async () => {
-        await createUserAndToken(true);
+        await createUserAndToken(false);
       });
 
       it('should allow creating first board', async () => {
-        const res = await execPost('guest board');
+        const res = await execPost('unregistered user board');
 
         expect(res.status).toBe(201);
-        expect(res.body).toHaveProperty('name', 'guest board');
-        expect(res.body).toHaveProperty('ownerId', user._id.toHexString());
+        expect(res.body).toHaveProperty('name', 'unregistered user board');
       });
 
       it('should prevent creating more than one board', async () => {
-        // Create first board
-        await execPost('first board');
+        // Create a board first
+        await Board.create({ name: 'first board', ownerId: user._id });
 
-        // Try to create second board
+        // Try to create a second board
         const res = await execPost('second board');
 
         expect(res.status).toBe(403);
-        expect(res.body).toHaveProperty(
-          'message',
-          'Guest users are limited to creating only one board.'
+        expect(res.body.message).toBe(
+          'Unregistered users are limited to creating only one board.'
         );
       });
     });

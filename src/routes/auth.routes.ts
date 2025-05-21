@@ -1,9 +1,9 @@
 import bcrypt from 'bcrypt';
 import express from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import auth from '../middleware/auth.middleware';
 import User from '../models/user.model';
-import Board from '../models/board.model';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError } from '../utils/errors';
 
@@ -17,8 +17,19 @@ const userLoginSchema = z.object({
 const userRegistrationSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(8, 'Password must be at least 8 characters long'),
-  username: z.string().optional(),
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .optional(),
 });
+
+// Cleanup expired temporary users on every auth request
+router.use(
+  asyncHandler(async (req, res, next) => {
+    await User.cleanupExpiredUsers();
+    next();
+  })
+);
 
 router.post(
   '/login',
@@ -32,10 +43,6 @@ router.post(
       throw new BadRequestError('Invalid email or password');
     }
 
-    if (user.isGuest) {
-      throw new BadRequestError('Guest users cannot log in with a password.');
-    }
-
     const isMatch = await bcrypt.compare(password, user.password!);
 
     if (!isMatch) {
@@ -46,88 +53,125 @@ router.post(
 
     res.json({
       token,
-      isGuest: false,
     });
   })
 );
 
+const tempSessionSchema = z.object({
+  tempUserId: z.string().optional(),
+});
+
 router.post(
-  '/guest-session',
+  '/temp-session',
   asyncHandler(async (req, res) => {
-    await User.cleanupExpiredGuests();
+    const { tempUserId } = tempSessionSchema.parse(req.body);
+    let tempUser;
+    if (tempUserId) {
+      if (mongoose.Types.ObjectId.isValid(tempUserId)) {
+        try {
+          tempUser = await User.findOne({
+            _id: tempUserId,
+            expiresAt: { $exists: true, $gt: new Date() },
+          });
+        } catch (error) {
+          console.error('Error finding temporary user:', error);
+        }
+      }
+    }
 
-    const guestUser = new User({
-      isGuest: true,
-      guestExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-    });
+    if (!tempUser) {
+      tempUser = new User({
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      });
+      await tempUser.save();
+    }
 
-    await guestUser.save();
-    const token = guestUser.generateAuthToken();
+    const token = tempUser.generateAuthToken();
+
+    const isResumedSession =
+      tempUserId &&
+      mongoose.Types.ObjectId.isValid(tempUserId) &&
+      tempUser._id.toString() === tempUserId;
 
     res.status(201).json({
       token,
-      isGuest: true,
-      expiresAt: guestUser.guestExpiresAt,
-      message: 'Guest session created successfully',
+      userId: tempUser._id,
+      expiresAt: tempUser.expiresAt,
+      message: isResumedSession
+        ? 'Resumed temporary session. Your previous boards have been restored.'
+        : 'Temporary session created. Your boards will be deleted when this session expires.',
     });
   })
 );
 
 router.post(
-  '/convert-to-user',
-  auth,
+  '/register',
   asyncHandler(async (req, res) => {
     const { email, password, username } = userRegistrationSchema.parse(
       req.body
     );
-
-    const user = await User.findById(req.userId);
-    if (!user || !user.isGuest) {
-      throw new BadRequestError(
-        'Only guest users can be converted to regular users'
-      );
-    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       throw new BadRequestError('Email already in use');
     }
 
-    await user.convertToRegisteredUser(email, password);
-    if (username) {
-      user.username = username;
-    }
-    await user.save();
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
+    const user = new User({
+      email,
+      password: hashedPassword,
+      username,
+    });
+
+    await user.save();
     const token = user.generateAuthToken();
 
-    res.json({
+    res.status(201).json({
       token,
-      isGuest: false,
-      message: 'Successfully converted to registered user',
+      message: 'User registered successfully',
     });
   })
 );
 
 router.post(
-  '/guest-logout',
+  '/convert-temp-account',
   auth,
   asyncHandler(async (req, res) => {
-    if (!req.isGuest) {
-      throw new BadRequestError('This endpoint is only for guest users');
-    }
+    const { email, password, username } = userRegistrationSchema.parse(
+      req.body
+    );
 
+    // Find the temporary user by ID from the auth token
     const user = await User.findById(req.userId);
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
-    await Board.deleteMany({ ownerId: req.userId });
+    if (user.email) {
+      throw new BadRequestError('This account is already registered');
+    }
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      throw new BadRequestError('Email already in use');
+    }
 
-    await user.deleteOne();
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    user.email = email;
+    user.password = hashedPassword;
+    user.username = username || user.username;
+    user.expiresAt = undefined; // Remove expiration date
+    await user.save();
+
+    // Generate a new token
+    const token = user.generateAuthToken();
 
     res.status(200).json({
-      message: 'Guest session ended and data cleaned up successfully',
+      token,
+      message: 'Account successfully converted to a permanent account',
     });
   })
 );

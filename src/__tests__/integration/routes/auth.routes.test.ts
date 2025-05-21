@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 import request from 'supertest';
 import app from '../../../app';
 import { connectDB, disconnectDB } from '../../../config/database';
@@ -103,269 +104,321 @@ describe('/api/auth', () => {
 
       expect(auth).toEqual(false);
     });
-
-    it('should return 400 when guest user tries to login', async () => {
-      await User.deleteMany({});
-      const guestUser = new User({
-        email: 'guest@example.com',
-        password: 'password123',
-        isGuest: true,
-      });
-      await guestUser.save();
-
-      const res = await request(app).post('/api/auth/login').send({
-        email: 'guest@example.com',
-        password: 'password123',
-      });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe(
-        'Guest users cannot log in with a password.'
-      );
-    });
   });
 
-  describe('POST /guest-session', () => {
+  describe('POST /register', () => {
+    let email: string;
+    let password: string;
+    let username: string;
+
+    const exe = () => {
+      return request(app)
+        .post('/api/auth/register')
+        .send({ email, password, username });
+    };
+
+    beforeEach(async () => {
+      email = 'newuser@example.com';
+      password = 'password123';
+      username = 'newuser';
+      await User.deleteMany({});
+    });
+
     afterEach(async () => {
       await User.deleteMany({});
     });
 
-    const exe = () => {
-      return request(app).post('/api/auth/guest-session').send();
-    };
-
-    it('should create a new guest session', async () => {
+    it('should register a new user', async () => {
       const res = await exe();
 
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('token');
-      expect(res.body).toHaveProperty('isGuest', true);
-      expect(res.body).toHaveProperty('expiresAt');
       expect(res.body).toHaveProperty(
         'message',
-        'Guest session created successfully'
+        'User registered successfully'
       );
 
-      // Verify user was created in database
-      const users = await User.find({ isGuest: true });
-      expect(users).toHaveLength(1);
-      expect(users[0].isGuest).toBe(true);
-      expect(users[0].guestExpiresAt).toBeDefined();
+      // Verify user created in database
+      const user = await User.findOne({ email });
+      expect(user).not.toBeNull();
+      expect(user?.email).toBe(email);
+      expect(user?.username).toBe(username);
     });
 
-    it('should clean up expired guest sessions when creating a new one', async () => {
-      const expiredUser = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+    it('should return 400 if email already exists', async () => {
+      // Create existing user first
+      await User.create({
+        email,
+        password: 'existing123',
+        username: 'existinguser',
       });
-      await expiredUser.save();
 
       const res = await exe();
-
-      expect(res.status).toBe(201);
-
-      // Verify expired user was cleaned up
-      const expiredUserExists = await User.findById(expiredUser._id);
-      expect(expiredUserExists).toBeNull();
-
-      // Verify only the new guest user exists
-      const users = await User.find({ isGuest: true });
-      expect(users).toHaveLength(1);
-      expect(users[0].guestExpiresAt).toBeInstanceOf(Date);
-      expect(users[0].guestExpiresAt!.getTime()).toBeGreaterThan(Date.now());
-    });
-
-    it('should allow multiple concurrent guest sessions', async () => {
-      // Create three guest sessions
-      const res1 = await exe();
-      const res2 = await exe();
-      const res3 = await exe();
-
-      expect(res1.status).toBe(201);
-      expect(res2.status).toBe(201);
-      expect(res3.status).toBe(201);
-
-      // Verify all three guest users exist in database
-      const guestUsers = await User.find({ isGuest: true });
-      expect(guestUsers).toHaveLength(3);
-
-      // Verify each guest user has a unique ID
-      const userIds = guestUsers.map((user) => user._id.toString());
-      const uniqueIds = new Set(userIds);
-      expect(uniqueIds.size).toBe(3);
-
-      // Verify each user got a different token
-      const tokens = [res1.body.token, res2.body.token, res3.body.token];
-      const uniqueTokens = new Set(tokens);
-      expect(uniqueTokens.size).toBe(3);
-    });
-  });
-
-  describe('POST /guest-logout', () => {
-    let guestUser: InstanceType<typeof User>;
-    let token: string;
-
-    beforeEach(async () => {
-      guestUser = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      });
-      await guestUser.save();
-      token = guestUser.generateAuthToken();
-    });
-
-    afterEach(async () => {
-      await User.deleteMany({});
-    });
-
-    const exe = () => {
-      return request(app)
-        .post('/api/auth/guest-logout')
-        .set('x-auth-token', token)
-        .send();
-    };
-
-    it('should return 401 if no token is provided', async () => {
-      const res = await request(app).post('/api/auth/guest-logout').send();
-      expect(res.status).toBe(401);
-    });
-
-    it('should return 400 if token is invalid', async () => {
-      const res = await request(app)
-        .post('/api/auth/guest-logout')
-        .set('x-auth-token', 'invalid_token')
-        .send();
-      expect(res.status).toBe(400);
-    });
-
-    it('should return 400 if user is not a guest', async () => {
-      const regularUser = new User({
-        email: 'test@test.com',
-        password: 'password123',
-      });
-      await regularUser.save();
-      const regularToken = regularUser.generateAuthToken();
-
-      const res = await request(app)
-        .post('/api/auth/guest-logout')
-        .set('x-auth-token', regularToken)
-        .send();
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe('This endpoint is only for guest users');
-    });
-
-    it('should successfully logout guest user and delete their data', async () => {
-      const board = new Board({ name: 'Test Board', ownerId: guestUser._id });
-      await board.save();
-
-      const res = await exe();
-
-      expect(res.status).toBe(200);
-      expect(res.body.message).toBe(
-        'Guest session ended and data cleaned up successfully'
-      );
-
-      const userExists = await User.findById(guestUser._id);
-      expect(userExists).toBeNull();
-
-      const boardExists = await Board.findById(board._id);
-      expect(boardExists).toBeNull();
-    });
-  });
-
-  describe('POST /convert-to-user', () => {
-    afterEach(async () => {
-      await User.deleteMany({});
-    });
-
-    it('should return 401 without auth token', async () => {
-      const res = await request(app).post('/api/auth/convert-to-user').send({
-        email: 'new@example.com',
-        password: 'password123',
-      });
-
-      expect(res.status).toBe(401);
-      expect(res.body.message).toBe('Unauthorized');
-    });
-
-    it('should return 400 when regular user tries to convert', async () => {
-      const user = new User({
-        email: 'regular@example.com',
-        password: 'password123',
-        isGuest: false,
-      });
-      await user.save();
-      const token = user.generateAuthToken();
-
-      const res = await request(app)
-        .post('/api/auth/convert-to-user')
-        .set('x-auth-token', token)
-        .send({
-          email: 'new@example.com',
-          password: 'password123',
-        });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toBe(
-        'Only guest users can be converted to regular users'
-      );
-    });
-
-    it('should return 400 when email already exists', async () => {
-      const existingUser = new User({
-        email: 'existing@example.com',
-        password: 'password123',
-      });
-      await existingUser.save();
-
-      const guestUser = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      });
-      await guestUser.save();
-      const token = guestUser.generateAuthToken();
-
-      const res = await request(app)
-        .post('/api/auth/convert-to-user')
-        .set('x-auth-token', token)
-        .send({
-          email: 'existing@example.com',
-          password: 'newpassword123',
-        });
 
       expect(res.status).toBe(400);
       expect(res.body.message).toBe('Email already in use');
     });
 
-    it('should successfully convert guest to regular user', async () => {
-      const guestUser = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    it('should return 400 if email is invalid', async () => {
+      email = 'invalid-email';
+      const res = await exe();
+
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 400 if password is too short', async () => {
+      password = '123';
+      const res = await exe();
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /temp-session', () => {
+    let expiredUser: InstanceType<typeof User>;
+    let expiredUserBoard: InstanceType<typeof Board>;
+    let existingTempUser: InstanceType<typeof User>;
+    let existingTempUserBoard: InstanceType<typeof Board>;
+
+    beforeEach(async () => {
+      // Create an expired user
+      const expiredDate = new Date();
+      expiredDate.setDate(expiredDate.getDate() - 1); // 1 day in the past
+
+      expiredUser = new User({
+        expiresAt: expiredDate,
       });
-      await guestUser.save();
-      const token = guestUser.generateAuthToken();
+      await expiredUser.save();
 
-      const newEmail = 'converted@example.com';
-      const newPassword = 'newpassword123';
+      // Create a board for the expired user
+      expiredUserBoard = new Board({
+        name: 'Expired User Board',
+        ownerId: expiredUser._id,
+      });
+      await expiredUserBoard.save();
 
+      // Create a valid temporary user
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 5); // 5 days in the future
+
+      existingTempUser = new User({
+        expiresAt: futureDate,
+      });
+      await existingTempUser.save();
+
+      // Create a board for the valid temporary user
+      existingTempUserBoard = new Board({
+        name: 'Existing Temp User Board',
+        ownerId: existingTempUser._id,
+      });
+      await existingTempUserBoard.save();
+    });
+
+    afterEach(async () => {
+      await User.deleteMany({});
+      await Board.deleteMany({});
+    });
+
+    it('should create a new temporary user when no tempUserId is provided', async () => {
+      const res = await request(app).post('/api/auth/temp-session').send({});
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body).toHaveProperty('userId');
+      expect(res.body).toHaveProperty('expiresAt');
+      expect(res.body.message).toContain('Temporary session created');
+
+      // The expiration date should be in the future
+      const expiresAt = new Date(res.body.expiresAt);
+      expect(expiresAt.getTime()).toBeGreaterThan(Date.now());
+
+      // Verify cleanup function removed expired users
+      const expiredUserExists = await User.findById(expiredUser._id);
+      expect(expiredUserExists).toBeNull();
+
+      // Verify expired user's board was cleaned up
+      const expiredBoardExists = await Board.findById(expiredUserBoard._id);
+      expect(expiredBoardExists).toBeNull();
+
+      // Verify existing temp user still exists
+      const existingUserStillExists = await User.findById(existingTempUser._id);
+      expect(existingUserStillExists).not.toBeNull();
+
+      // Verify we now have 2 temp users (the existing one and the new one)
+      const tempUsers = await User.find({ expiresAt: { $exists: true } });
+      expect(tempUsers).toHaveLength(2);
+    });
+
+    it('should reuse an existing temporary user when valid tempUserId is provided', async () => {
       const res = await request(app)
-        .post('/api/auth/convert-to-user')
+        .post('/api/auth/temp-session')
+        .send({ tempUserId: existingTempUser._id.toString() });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body).toHaveProperty('userId');
+      expect(res.body.userId).toBe(existingTempUser._id.toString());
+      expect(res.body).toHaveProperty('expiresAt');
+      expect(res.body.message).toContain('Resumed temporary session');
+
+      // Verify no new temp users were created
+      const tempUsers = await User.find({ expiresAt: { $exists: true } });
+      expect(tempUsers).toHaveLength(1); // only the existing one, expired one was cleaned up
+
+      // Verify the existing board is still associated with the user
+      const existingBoard = await Board.findById(existingTempUserBoard._id);
+      expect(existingBoard).not.toBeNull();
+    });
+
+    it('should create a new temporary user when an invalid tempUserId is provided', async () => {
+      const res = await request(app)
+        .post('/api/auth/temp-session')
+        .send({ tempUserId: 'invalid-id' });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body).toHaveProperty('userId');
+      // Can't compare IDs directly since a new one is generated
+      expect(res.body.userId).not.toBe('invalid-id');
+      expect(res.body).toHaveProperty('expiresAt');
+      expect(res.body.message).toContain('Temporary session created');
+
+      // Verify a new temp user was created
+      const tempUsers = await User.find({ expiresAt: { $exists: true } });
+      expect(tempUsers).toHaveLength(2); // the existing one and a new one
+    });
+
+    it('should create a new temporary user when the provided tempUserId is expired', async () => {
+      const res = await request(app)
+        .post('/api/auth/temp-session')
+        .send({ tempUserId: expiredUser._id.toString() });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body.message).toContain('Temporary session created');
+
+      // The expired user should be deleted by the cleanup process
+      const expiredUserExists = await User.findById(expiredUser._id);
+      expect(expiredUserExists).toBeNull();
+
+      // Verify a new temp user was created
+      const tempUsers = await User.find({ expiresAt: { $exists: true } });
+      expect(tempUsers).toHaveLength(2); // the existing one and a new one
+    });
+  });
+
+  describe('POST /convert-temp-account', () => {
+    let tempUser: InstanceType<typeof User>;
+    let tempUserBoard: InstanceType<typeof Board>;
+    let token: string;
+    let email: string;
+    let password: string;
+    let username: string;
+
+    beforeEach(async () => {
+      // Create a temporary user
+      tempUser = new User({
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+      await tempUser.save();
+      token = tempUser.generateAuthToken();
+
+      // Create a board for the temporary user
+      tempUserBoard = new Board({
+        name: 'Temp User Board',
+        ownerId: tempUser._id,
+      });
+      await tempUserBoard.save();
+
+      // Setup conversion data
+      email = 'converted@example.com';
+      password = 'password123';
+      username = 'converteduser';
+    });
+
+    afterEach(async () => {
+      await User.deleteMany({});
+      await Board.deleteMany({});
+    });
+
+    const execConvertAccount = () => {
+      return request(app)
+        .post('/api/auth/convert-temp-account')
         .set('x-auth-token', token)
-        .send({
-          email: newEmail,
-          password: newPassword,
-        });
+        .send({ email, password, username });
+    };
+
+    it('should return 401 if no token provided', async () => {
+      token = '';
+      const res = await execConvertAccount();
+
+      expect(res.status).toBe(401);
+    });
+
+    it('should convert a temporary user to a permanent account', async () => {
+      const res = await execConvertAccount();
 
       expect(res.status).toBe(200);
-      expect(res.body.token).toBeDefined();
-      expect(res.body.isGuest).toBe(false);
+      expect(res.body).toHaveProperty('token');
+      expect(res.body).toHaveProperty(
+        'message',
+        'Account successfully converted to a permanent account'
+      );
 
-      const updatedUser = await User.findById(guestUser._id);
-      expect(updatedUser).toBeDefined();
-      expect(updatedUser?.isGuest).toBe(false);
-      expect(updatedUser?.email).toBe(newEmail);
-      expect(updatedUser?.guestExpiresAt).toBeUndefined();
+      // Verify the user was updated correctly
+      const updatedUser = await User.findById(tempUser._id);
+      expect(updatedUser).not.toBeNull();
+      expect(updatedUser?.email).toBe(email);
+      expect(updatedUser?.username).toBe(username);
+      expect(updatedUser?.expiresAt).toBeUndefined();
+
+      // Verify the board still exists and is associated with the user
+      const board = await Board.findById(tempUserBoard._id);
+      expect(board).not.toBeNull();
+      expect(board?.ownerId.toString()).toBe(tempUser._id.toString());
+
+      // Verify the JWT payload in the response token
+      const decodedToken = jwt.verify(
+        res.body.token,
+        process.env.JWT_SECRET as string
+      ) as JwtPayload;
+      expect(decodedToken).toHaveProperty('_id');
+      expect(decodedToken).toHaveProperty('email', email);
+      expect(decodedToken).toHaveProperty('username', username);
+      expect(decodedToken).toHaveProperty('isTemporary', false);
+    });
+
+    it('should return 400 if user already has an email', async () => {
+      // Override the temp user with one that already has an email
+      tempUser = new User({
+        email: 'existing@example.com',
+        password: 'password123',
+      });
+      await tempUser.save();
+      token = tempUser.generateAuthToken();
+
+      // Use different email/username for the request
+      email = 'new@example.com';
+      username = 'newusername';
+
+      const res = await execConvertAccount();
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe('This account is already registered');
+    });
+
+    it('should return 400 if email is already in use', async () => {
+      // Create another user with the same email we want to use for conversion
+      await User.create({
+        email,
+        password: 'existing123',
+        username: 'existinguser',
+      });
+
+      const res = await execConvertAccount();
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toBe('Email already in use');
     });
   });
 });

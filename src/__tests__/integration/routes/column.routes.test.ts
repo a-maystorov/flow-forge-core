@@ -25,12 +25,11 @@ describe('/api/boards/:boardId/columns', () => {
     await Column.deleteMany({});
   });
 
-  const createUserAndToken = async (isGuest = false) => {
+  const createUserAndToken = async (withEmail = true) => {
     user = new User({
-      email: isGuest ? undefined : 'test@example.com',
-      password: isGuest ? undefined : 'password123',
-      username: isGuest ? undefined : 'testuser',
-      isGuest,
+      email: withEmail ? 'test@example.com' : undefined,
+      password: withEmail ? 'password123' : undefined,
+      username: withEmail ? 'testuser' : undefined,
     });
 
     await user.save();
@@ -115,9 +114,9 @@ describe('/api/boards/:boardId/columns', () => {
       expect(res.body).toHaveProperty('boardId', boardId.toString());
     });
 
-    describe('guest user', () => {
+    describe('unregistered user (no email)', () => {
       beforeEach(async () => {
-        await createUserAndToken(true);
+        await createUserAndToken(false);
         await createBoard('Test Board');
       });
 
@@ -142,7 +141,7 @@ describe('/api/boards/:boardId/columns', () => {
         expect(res.status).toBe(403);
         expect(res.body).toHaveProperty(
           'message',
-          'Guest users are limited to creating only three columns.'
+          'Unregistered users are limited to creating only three columns.'
         );
       });
     });
@@ -226,9 +225,9 @@ describe('/api/boards/:boardId/columns', () => {
       });
     });
 
-    describe('guest user', () => {
+    describe('unregistered user (no email)', () => {
       beforeEach(async () => {
-        await createUserAndToken(true);
+        await createUserAndToken(false);
         await createBoard('Test Board');
       });
 
@@ -247,15 +246,21 @@ describe('/api/boards/:boardId/columns', () => {
         expect(res.status).toBe(403);
         expect(res.body).toHaveProperty(
           'message',
-          'Guest users are limited to creating only three columns.'
+          'Unregistered users are limited to creating only three columns.'
         );
       });
 
-      it('should prevent creating columns if user already has some', async () => {
+      it('should prevent exceeding the limit with existing columns', async () => {
+        // Create two columns first using the batch endpoint
         await execBatchPost(['Column 1', 'Column 2']);
 
+        // Try to create two more columns which would exceed the limit
         const res = await execBatchPost(['Column 3', 'Column 4']);
         expect(res.status).toBe(403);
+        expect(res.body).toHaveProperty(
+          'message',
+          'Unregistered users are limited to creating only three columns.'
+        );
       });
     });
   });

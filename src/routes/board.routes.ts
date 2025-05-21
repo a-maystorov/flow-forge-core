@@ -1,10 +1,11 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import { auth, validateObjectId } from '../middleware';
 import Board from '../models/board.model';
 import Column from '../models/column.model';
-import Task from '../models/task.model';
 import Subtask from '../models/subtask.model';
+import Task from '../models/task.model';
 import { asyncHandler } from '../utils/asyncHandler';
 import { ForbiddenError, NotFoundError } from '../utils/errors';
 import columnRoutes from './column.routes';
@@ -69,12 +70,13 @@ router.post(
     const parsedData = boardCreationSchema.parse(req.body);
     const { name } = parsedData;
 
-    if (req.isGuest) {
+    const user = await mongoose.model('User').findById(req.userId);
+    if (!user?.email) {
       const existingBoard = await Board.findOne({ ownerId: req.userId });
 
       if (existingBoard) {
         throw new ForbiddenError(
-          'Guest users are limited to creating only one board.'
+          'Unregistered users are limited to creating only one board.'
         );
       }
     }

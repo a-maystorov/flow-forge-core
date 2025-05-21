@@ -1,33 +1,30 @@
 import dotenv from 'dotenv';
 import { sign } from 'jsonwebtoken';
 import mongoose, { Model, Schema } from 'mongoose';
-import Board from './board.model';
 
 dotenv.config();
 
 const TIME_CONSTANTS = {
   DAYS_IN_MS: 24 * 60 * 60 * 1000, // 1 day in milliseconds
-  GUEST_EXPIRY_DAYS: 7,
-  REGULAR_TOKEN_EXPIRY_DAYS: 1,
+  TOKEN_EXPIRY_DAYS: 1,
+  TEMP_USER_EXPIRY_DAYS: 7, // Temporary users expire after 7 days
 } as const;
 
 export interface IUser {
   username?: string;
   email?: string;
   password?: string;
-  isGuest: boolean;
   createdAt: Date;
   lastActive: Date;
-  guestExpiresAt?: Date;
+  expiresAt?: Date; // Used for temporary users
 }
 
 interface IUserMethods {
   generateAuthToken(): string;
-  convertToRegisteredUser(email: string, password: string): Promise<void>;
 }
 
 interface UserModel extends Model<IUser, object, IUserMethods> {
-  cleanupExpiredGuests(): Promise<void>;
+  cleanupExpiredUsers(): Promise<void>;
 }
 
 const UserSchema: Schema<IUser, UserModel, IUserMethods> = new Schema({
@@ -39,47 +36,38 @@ const UserSchema: Schema<IUser, UserModel, IUserMethods> = new Schema({
     index: true,
   },
   password: { type: String },
-  isGuest: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   lastActive: { type: Date, default: Date.now },
-  guestExpiresAt: { type: Date },
+  expiresAt: { type: Date },
 });
 
 UserSchema.methods.generateAuthToken = function (): string {
-  const expiresIn = this.isGuest
-    ? TIME_CONSTANTS.GUEST_EXPIRY_DAYS * TIME_CONSTANTS.DAYS_IN_MS
-    : TIME_CONSTANTS.REGULAR_TOKEN_EXPIRY_DAYS * TIME_CONSTANTS.DAYS_IN_MS;
+  // If this is a temporary user, set token to expire at the same time as the user
+  const expiresIn = this.expiresAt
+    ? Math.max(0, this.expiresAt.getTime() - Date.now()) // Time until expiration
+    : TIME_CONSTANTS.TOKEN_EXPIRY_DAYS * TIME_CONSTANTS.DAYS_IN_MS;
 
   return sign(
     {
       _id: this._id,
-      isGuest: this.isGuest,
+      email: this.email,
+      username: this.username,
+      isTemporary: !!this.expiresAt,
+      expiresAt: this.expiresAt,
     },
     process.env.JWT_SECRET as string,
     { expiresIn: Math.floor(expiresIn / 1000) } // Convert to seconds for JWT
   );
 };
 
-UserSchema.methods.convertToRegisteredUser = async function (
-  email: string,
-  password: string
-): Promise<void> {
-  this.email = email;
-  this.password = password;
-  this.isGuest = false;
-  this.guestExpiresAt = undefined;
-  await this.save();
-};
-
-UserSchema.statics.cleanupExpiredGuests = async function () {
-  const expiredGuests = await this.find({
-    isGuest: true,
-    guestExpiresAt: { $lt: new Date() },
+UserSchema.statics.cleanupExpiredUsers = async function (): Promise<void> {
+  const expiredUsers = await this.find({
+    expiresAt: { $lt: new Date() },
   });
 
-  for (const guest of expiredGuests) {
-    await Board.deleteMany({ ownerId: guest._id });
-    await guest.deleteOne();
+  for (const user of expiredUsers) {
+    await mongoose.model('Board').deleteMany({ ownerId: user._id });
+    await user.deleteOne();
   }
 };
 

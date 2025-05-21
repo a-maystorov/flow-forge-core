@@ -5,9 +5,8 @@ import User from '../../../models/user.model';
 
 interface JWTPayload {
   _id: string;
-  isGuest: boolean;
-  exp?: number;
-  iat?: number;
+  iat: number;
+  exp: number;
 }
 
 describe('user model', () => {
@@ -25,11 +24,10 @@ describe('user model', () => {
   });
 
   describe('generateAuthToken', () => {
-    it('should generate valid JWT for regular user', async () => {
+    it('should generate a valid JWT for regular users', async () => {
       const user = new User({
         email: 'test@example.com',
         password: 'password123',
-        isGuest: false,
       });
       await user.save();
 
@@ -40,15 +38,15 @@ describe('user model', () => {
       ) as JWTPayload;
 
       expect(decoded._id).toBe(user._id.toString());
-      expect(decoded.isGuest).toBe(false);
       expect(decoded.exp).toBeDefined();
-      expect(decoded.exp).toBeGreaterThan(Date.now() / 1000);
+      // Regular token should expire in ~1 day
+      expect(decoded.exp! - decoded.iat!).toBeCloseTo(24 * 60 * 60, -2);
     });
 
-    it('should generate valid JWT for guest user with longer expiration', async () => {
+    it('should generate a valid JWT for temporary users with synced expiry', async () => {
+      // Create a user that expires in 7 days
       const user = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
       await user.save();
 
@@ -59,65 +57,39 @@ describe('user model', () => {
       ) as JWTPayload;
 
       expect(decoded._id).toBe(user._id.toString());
-      expect(decoded.isGuest).toBe(true);
       expect(decoded.exp).toBeDefined();
-      // Guest token should expire in ~7 days
+      // Token should expire in ~7 days (synced with user expiration)
       expect(decoded.exp! - decoded.iat!).toBeCloseTo(7 * 24 * 60 * 60, -2);
     });
   });
 
-  describe('convertToRegisteredUser', () => {
-    it('should convert guest user to registered user', async () => {
-      const guestUser = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  describe('cleanupExpiredUsers', () => {
+    it('should delete expired temporary users and their boards', async () => {
+      const expiredUser = new User({
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
       });
-      await guestUser.save();
-
-      const email = 'converted@example.com';
-      const password = 'newpassword123';
-
-      await guestUser.convertToRegisteredUser(email, password);
-      await guestUser.save();
-
-      const updatedUser = await User.findById(guestUser._id);
-      expect(updatedUser).toBeDefined();
-      expect(updatedUser?.isGuest).toBe(false);
-      expect(updatedUser?.email).toBe(email);
-      expect(updatedUser?.password).toBe(password);
-      expect(updatedUser?.guestExpiresAt).toBeUndefined();
-    });
-  });
-
-  describe('cleanupExpiredGuests', () => {
-    it('should delete expired guest users and their boards', async () => {
-      const expiredGuest = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-      });
-      await expiredGuest.save();
+      await expiredUser.save();
 
       const board = new Board({
         name: 'Test Board',
-        ownerId: expiredGuest._id,
+        ownerId: expiredUser._id,
       });
       await board.save();
 
-      const activeGuest = new User({
-        isGuest: true,
-        guestExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
+      const activeUser = new User({
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 1 day from now
       });
-      await activeGuest.save();
+      await activeUser.save();
 
-      await User.cleanupExpiredGuests();
+      await User.cleanupExpiredUsers();
 
-      const expiredGuestExists = await User.findById(expiredGuest._id);
-      const expiredGuestBoard = await Board.findById(board._id);
-      const activeGuestExists = await User.findById(activeGuest._id);
+      const expiredUserExists = await User.findById(expiredUser._id);
+      const expiredUserBoard = await Board.findById(board._id);
+      const activeUserExists = await User.findById(activeUser._id);
 
-      expect(expiredGuestExists).toBeNull();
-      expect(expiredGuestBoard).toBeNull();
-      expect(activeGuestExists).toBeDefined();
+      expect(expiredUserExists).toBeNull();
+      expect(expiredUserBoard).toBeNull();
+      expect(activeUserExists).toBeDefined();
     });
   });
 });

@@ -54,8 +54,10 @@ describe('auth middleware', () => {
       expect(res.status).toBe(200);
     });
 
-    it('should accept valid token from guest user', async () => {
-      const user = new User({ isGuest: true });
+    it('should accept valid token from unregistered user (no email)', async () => {
+      const user = new User({
+        // No email or password, just a user ID
+      });
       await user.save();
       token = user.generateAuthToken();
 

@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import { auth, validateObjectId } from '../middleware';
 import Board from '../models/board.model';
@@ -36,11 +37,12 @@ router.post(
       throw new NotFoundError('Board not found');
     }
 
-    if (req.isGuest) {
+    const user = await mongoose.model('User').findById(req.userId);
+    if (!user?.email) {
       const existingColumns = await Column.countDocuments({ boardId });
       if (existingColumns >= 3) {
         throw new ForbiddenError(
-          'Guest users are limited to creating only three columns.'
+          'Unregistered users are limited to creating only three columns.'
         );
       }
     }
@@ -71,11 +73,12 @@ router.post(
       throw new NotFoundError('Board not found');
     }
 
-    if (req.isGuest) {
+    const user = await mongoose.model('User').findById(req.userId);
+    if (!user?.email) {
       const existingColumns = await Column.countDocuments({ boardId });
       if (existingColumns + columnNames.length > 3) {
         throw new ForbiddenError(
-          'Guest users are limited to creating only three columns.'
+          'Unregistered users are limited to creating only three columns.'
         );
       }
     }

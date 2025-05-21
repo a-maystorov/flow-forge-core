@@ -12,11 +12,9 @@ const auth = (req: Request, res: Response, next: NextFunction) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
       _id: string;
-      isGuest: boolean;
     };
 
     req.userId = decoded._id;
-    req.isGuest = decoded.isGuest;
     next();
   } catch (error) {
     res
