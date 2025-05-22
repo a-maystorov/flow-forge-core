@@ -27,6 +27,11 @@ app.get('/', (req, res) => {
   res.send('Hello, Flow Forge Core!');
 });
 
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', environment: process.env.NODE_ENV });
+});
+
 app.get('/api', (req, res) => {
   res.json({ message: 'CORS is working!' });
 });
