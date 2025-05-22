@@ -9,9 +9,10 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "typeRoots": ["./@types", "./node_modules/@types"],
-    "types": ["node", "express", "jest"],
-    "resolveJsonModule": true
+    "types": ["express"],
+    "resolveJsonModule": true,
+    "noImplicitAny": false
   },
   "include": ["src/**/*.ts", "@types/**/*.d.ts"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
