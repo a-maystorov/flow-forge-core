@@ -8,8 +8,10 @@
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "typeRoots": ["./@types", "./node_modules/@types"]
+    "typeRoots": ["./@types", "./node_modules/@types"],
+    "types": ["node", "express", "jest"],
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "src/__tests__/**/*"]
+  "include": ["src/**/*.ts", "@types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
 }

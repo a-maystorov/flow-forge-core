@@ -1,5 +1,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
+// Only importing for type information, not for runtime
+import type {} from '../@types/express';
 import corsMiddleware from './config/cors';
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware';
