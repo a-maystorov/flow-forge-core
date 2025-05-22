@@ -2,7 +2,7 @@ services:
   - type: web
     name: flow-forge-core
     env: node
-    buildCommand: npm install --ignore-scripts && npm run build:prod
+    buildCommand: npm install --ignore-scripts && npm run build:force
     startCommand: npm start
     healthCheckPath: /health
     envVars:
