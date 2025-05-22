@@ -5,8 +5,6 @@
   "main": "dist/app.js",
   "scripts": {
     "build": "tsc",
-    "build:prod": "tsc --skipLibCheck",
-    "build:force": "node build-prod.mjs",
     "dev": "NODE_ENV=development nodemon --exec ts-node src/app.ts",
     "start": "NODE_ENV=production node dist/app.js",
     "test": "NODE_ENV=test jest --detectOpenHandles",
