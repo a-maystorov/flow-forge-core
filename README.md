@@ -123,7 +123,7 @@ npm run dev
 - `PUT /api/boards/:id` - Update board
 - `DELETE /api/boards/:id` - Delete board
 
-### AI Assistant Endpoints
+### AI Assistant Endpoints(WIP)
 
 - `POST /api/ai/board-suggestion` - Generate board suggestions based on project descriptions
 - `POST /api/ai/task-breakdown` - Break down tasks into subtasks
