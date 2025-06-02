@@ -1,10 +1,13 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import mongoose from 'mongoose';
 // Only importing for type information, not for runtime
 import type {} from '../@types/express';
 import corsMiddleware from './config/cors';
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware';
+import Chat from './models/chat.model';
+import Message, { MessageRole } from './models/message.model';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
 import userRoutes from './routes/user.routes';
@@ -29,6 +32,66 @@ app.use('/api/boards', boardRoutes);
 
 app.get('/', async (req, res) => {
   res.send('Hello, Flow Forge Core!');
+});
+
+// Test endpoint for Chat and Message models
+app.get('/test-chat', async (req, res) => {
+  try {
+    // Step 1: Create a new chat
+    console.log('Creating test chat...');
+    const testChat = new Chat({
+      userId: new mongoose.Types.ObjectId(), // Generate a valid ObjectId
+      title: 'Test Chat Conversation',
+    });
+    await testChat.save();
+
+    // Step 2: Add messages to the chat
+    console.log('Adding messages to chat...');
+    const messages = [
+      {
+        chatId: testChat._id,
+        role: MessageRole.USER,
+        content:
+          'Hello, can you help me create a kanban board for my website redesign project?',
+      },
+      {
+        chatId: testChat._id,
+        role: MessageRole.ASSISTANT,
+        content:
+          'Of course! I can help you set up a kanban board for your website redesign. Would you like some suggested columns and tasks to get started?',
+      },
+      {
+        chatId: testChat._id,
+        role: MessageRole.USER,
+        content:
+          'Yes, please create columns for Planning, Design, Development, and Testing.',
+      },
+    ];
+
+    // Save all messages
+    await Message.insertMany(messages);
+
+    // Step 3: Retrieve the chat with its messages
+    console.log('Retrieving chat and messages...');
+    const chat = await Chat.findById(testChat._id);
+    const chatMessages = await Message.find({ chatId: testChat._id }).sort(
+      'createdAt'
+    );
+
+    // Return the test results
+    res.status(200).json({
+      success: true,
+      chat,
+      messages: chatMessages,
+      messageCount: chatMessages.length,
+    });
+  } catch (error) {
+    console.error('Chat Test Error:', error);
+    res.status(500).json({
+      error: 'Chat test failed',
+      details: error,
+    });
+  }
 });
 
 // Comprehensive test endpoint showcasing the full AI assistant workflow
