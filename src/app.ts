@@ -35,7 +35,7 @@ app.get('/', async (req, res) => {
   res.send('Hello, Flow Forge Core!');
 });
 
-// Test endpoint for ChatService
+// Test endpoint for ChatService basic functionality
 app.get('/test-chat', async (req, res) => {
   try {
     // Step 1: Create a new chat using ChatService
@@ -318,6 +318,55 @@ app.get('/health', (req, res) => {
 
 app.get('/api', (req, res) => {
   res.json({ message: 'CORS is working!' });
+});
+
+// Test endpoint for ChatService AI integration
+app.post('/test-chat-ai', async (req, res) => {
+  try {
+    const { chatId, message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({
+        error: 'Missing required parameter: message is required',
+      });
+    }
+
+    // Check if the chat exists or create a new one
+    let chat;
+    try {
+      chat = await Chat.findById(chatId);
+    } catch (error) {
+      console.error('Chat not found:', error);
+    }
+
+    if (!chat) {
+      const userId = new mongoose.Types.ObjectId(); // In production this would come from auth
+      chat = await ChatService.createChat(userId, 'AI Chat Test');
+    }
+
+    // Process the message with AI integration
+    const result = await ChatService.processUserMessage(chat._id, message);
+
+    res.status(200).json({
+      success: true,
+      chat,
+      result,
+      // Include instructions for frontend testing
+      instructions: {
+        create_board:
+          'Try "Create a board for a mobile app development project"',
+        improve_task: 'Try "Improve the description of this task"',
+        break_down_task: 'Try "Break this task down into subtasks"',
+        general: 'Or just ask a general question',
+      },
+    });
+  } catch (error) {
+    console.error('AI Chat Test Error:', error);
+    res.status(500).json({
+      error: 'AI Chat test failed',
+      details: error,
+    });
+  }
 });
 
 app.use(errorHandler);

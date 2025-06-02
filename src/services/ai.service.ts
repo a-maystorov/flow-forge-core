@@ -34,7 +34,10 @@ export class AIService {
             The response should be a valid JSON object representing a board structure with a 'title', 'description', and 'columns'.
             Each column should have a 'title' and an array of 'tasks'.
             Each task should have a 'title', 'description', and 'priority' (low, medium, or high).
-            Ensure the board has at least 3 columns (e.g., "To Do", "In Progress", "Done").`,
+            
+            IMPORTANT: Create a board with exactly 3 columns: "To Do", "In Progress", and "Done".
+            CRITICAL: Place ALL tasks in the "To Do" column. The "In Progress" and "Done" columns should be empty (have no tasks).
+            For new boards, users should start with all tasks in the To Do column and move them to other columns as they progress.`,
           },
           {
             role: 'user',
