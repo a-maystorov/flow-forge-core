@@ -7,11 +7,12 @@ import corsMiddleware from './config/cors';
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware';
 import Chat from './models/chat.model';
-import Message, { MessageRole } from './models/message.model';
+import { MessageRole } from './models/message.model';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
 import userRoutes from './routes/user.routes';
 import AIService from './services/ai.service';
+import ChatService from './services/chat.service';
 import { BoardContext, PreviewTask, TaskContext } from './types/ai.types';
 
 dotenv.config();
@@ -34,56 +35,53 @@ app.get('/', async (req, res) => {
   res.send('Hello, Flow Forge Core!');
 });
 
-// Test endpoint for Chat and Message models
+// Test endpoint for ChatService
 app.get('/test-chat', async (req, res) => {
   try {
-    // Step 1: Create a new chat
-    console.log('Creating test chat...');
-    const testChat = new Chat({
-      userId: new mongoose.Types.ObjectId(), // Generate a valid ObjectId
-      title: 'Test Chat Conversation',
-    });
-    await testChat.save();
+    // Step 1: Create a new chat using ChatService
+    console.log('Creating chat via ChatService...');
+    const userId = new mongoose.Types.ObjectId();
+    const chat = await ChatService.createChat(userId, 'Chat Service Test');
 
-    // Step 2: Add messages to the chat
-    console.log('Adding messages to chat...');
-    const messages = [
-      {
-        chatId: testChat._id,
-        role: MessageRole.USER,
-        content:
-          'Hello, can you help me create a kanban board for my website redesign project?',
-      },
-      {
-        chatId: testChat._id,
-        role: MessageRole.ASSISTANT,
-        content:
-          'Of course! I can help you set up a kanban board for your website redesign. Would you like some suggested columns and tasks to get started?',
-      },
-      {
-        chatId: testChat._id,
-        role: MessageRole.USER,
-        content:
-          'Yes, please create columns for Planning, Design, Development, and Testing.',
-      },
-    ];
-
-    // Save all messages
-    await Message.insertMany(messages);
-
-    // Step 3: Retrieve the chat with its messages
-    console.log('Retrieving chat and messages...');
-    const chat = await Chat.findById(testChat._id);
-    const chatMessages = await Message.find({ chatId: testChat._id }).sort(
-      'createdAt'
+    // Step 2: Add messages to the chat using ChatService
+    console.log('Adding messages via ChatService...');
+    const message1 = await ChatService.addMessage(
+      chat._id,
+      MessageRole.USER,
+      'Can you help me organize my software project?'
     );
+
+    const message2 = await ChatService.addMessage(
+      chat._id,
+      MessageRole.ASSISTANT,
+      "I'd be happy to help! What kind of software project are you working on?"
+    );
+
+    const message3 = await ChatService.addMessage(
+      chat._id,
+      MessageRole.USER,
+      'A mobile app for tracking fitness progress'
+    );
+
+    // Step 3: Retrieve all chat messages using ChatService
+    console.log('Getting chat messages via ChatService...');
+    const messages = await ChatService.getChatMessages(chat._id);
+
+    // Get the updated chat with lastMessageAt timestamp
+    console.log('Getting updated chat...');
+    const updatedChat = await Chat.findById(chat._id);
 
     // Return the test results
     res.status(200).json({
       success: true,
-      chat,
-      messages: chatMessages,
-      messageCount: chatMessages.length,
+      chat: updatedChat,
+      messages,
+      messageCount: messages.length,
+      individualMessages: {
+        message1,
+        message2,
+        message3,
+      },
     });
   } catch (error) {
     console.error('Chat Test Error:', error);
