@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { openai } from '../config/openai';
 import Chat from '../models/chat.model';
 import Message, { MessageRole } from '../models/message.model';
-import { BoardContext, PreviewBoard, PreviewSubtask } from '../types/ai.types';
+import { PreviewBoard, PreviewSubtask } from '../types/ai.types';
 import AIService from './ai.service';
 
 /**
@@ -17,7 +17,6 @@ interface MessageIntent {
   userId?: mongoose.Types.ObjectId;
   taskTitle?: string;
   taskDescription?: string;
-  boardContext?: BoardContext;
 }
 
 /**
