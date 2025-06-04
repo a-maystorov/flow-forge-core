@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
+import { openai } from '../config/openai';
 import Chat from '../models/chat.model';
 import Message, { MessageRole } from '../models/message.model';
-import { PreviewBoard, PreviewSubtask } from '../types/ai.types';
+import { BoardContext, PreviewBoard, PreviewSubtask } from '../types/ai.types';
 import AIService from './ai.service';
-import { openai } from '../config/openai';
 
 /**
  * Interface for message intent results
@@ -14,9 +14,10 @@ interface MessageIntent {
     | 'improve_task'
     | 'break_down_task'
     | 'general_conversation';
-  userId?: string | mongoose.Types.ObjectId;
+  userId?: mongoose.Types.ObjectId;
   taskTitle?: string;
   taskDescription?: string;
+  boardContext?: BoardContext;
 }
 
 /**
@@ -226,7 +227,6 @@ class ChatService {
     message: string
   ): Promise<MessageIntent> {
     try {
-      console.log('Using LLM classification for intent detection...');
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
@@ -263,7 +263,6 @@ class ChatService {
       }
 
       const classification = JSON.parse(content);
-      console.log('LLM classification result:', classification);
 
       // Map the classification to our MessageIntent interface
       const intent: MessageIntent = {
@@ -272,7 +271,6 @@ class ChatService {
           | 'improve_task'
           | 'break_down_task'
           | 'general_conversation',
-        userId: new mongoose.Types.ObjectId(), // This would normally come from auth
       };
 
       // Add any extracted context
@@ -288,7 +286,6 @@ class ChatService {
     } catch (error) {
       console.error('Error classifying intent with LLM:', error);
       // If LLM classification fails, return general conversation as default
-      console.log('Classification failed, defaulting to general conversation');
       return {
         action: 'general_conversation',
       };
@@ -303,10 +300,9 @@ class ChatService {
    */
   private async handleBoardGeneration(
     userMessage: string,
-    userId: string | mongoose.Types.ObjectId
+    userId: mongoose.Types.ObjectId
   ) {
-    const userIdStr = typeof userId === 'string' ? userId : userId.toString();
-    return await AIService.generateBoardSuggestion(userMessage, userIdStr);
+    return await AIService.generateBoardSuggestion(userMessage, userId);
   }
 
   /**
@@ -314,6 +310,7 @@ class ChatService {
    * @param taskTitle - The current title of the task
    * @param taskDescription - The current description of the task
    * @param userRequest - The user's request for improvement
+   * @param boardContext - The board context for the task
    * @returns The improved task
    */
   private async handleTaskImprovement(

@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { openai } from '../config/openai';
 import {
   BoardContext,
@@ -21,7 +22,7 @@ export class AIService {
    */
   async generateBoardSuggestion(
     prompt: string,
-    userId: string
+    userId: Types.ObjectId
   ): Promise<PreviewBoard> {
     try {
       const response = await openai.client.chat.completions.create({
@@ -33,11 +34,13 @@ export class AIService {
             Your task is to generate a structured board with columns and tasks based on the user's prompt.
             The response should be a valid JSON object representing a board structure with a 'title', 'description', and 'columns'.
             Each column should have a 'title' and an array of 'tasks'.
-            Each task should have a 'title', 'description', and 'priority' (low, medium, or high).
+            Each task should have a 'title', 'description', and 'status' (Todo, Doing, or Done).
+            Each task should have an array of 'subtasks' with 'title' and 'description'.
             
-            IMPORTANT: Create a board with exactly 3 columns: "To Do", "In Progress", and "Done".
-            CRITICAL: Place ALL tasks in the "To Do" column. The "In Progress" and "Done" columns should be empty (have no tasks).
-            For new boards, users should start with all tasks in the To Do column and move them to other columns as they progress.`,
+            IMPORTANT: Create a board with columns that make sense for the user's use case and prompt.
+            There is no fixed number of columns - create as many as needed based on the user's request.
+            The column names should be relevant to the user's workflow - you don't have to use standard names if you don't need to.
+            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.`,
           },
           {
             role: 'user',
@@ -88,7 +91,12 @@ export class AIService {
             Your task is to generate a single column with relevant tasks based on the user's prompt.
             The column should meaningfully extend the existing board structure.
             The response should be a valid JSON object representing a column with a 'name' field and an array of 'tasks'.
-            Each task should have a 'title', 'description', and 'priority' (low, medium, or high).`,
+            Each task should have a 'title', 'description', and 'status' (Todo, Doing, or Done).
+            Each task should have an array of 'subtasks' with 'title' and 'description'.
+
+            IMPORTANT: Add tasks to the column only if the user requests it.
+            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.
+            `,
           },
           {
             role: 'user',
@@ -106,19 +114,17 @@ export class AIService {
       const columnData = JSON.parse(content) as RawAIColumnOutput;
 
       // Extract column name from AI response or use a default
-      const columnName = columnData.name || columnData.title || 'New Column';
+      const columnName = columnData.name || 'New Column';
 
       // Map tasks with default status based on column name
-      const columnStatus = this.getStatusFromColumnName(columnName);
       const tasks = (columnData.tasks || []).map((task: RawAITaskOutput) => ({
         title: task.title || 'Unnamed Task',
         description: task.description || '',
-        status: columnStatus,
       }));
 
       return {
         name: columnName,
-        tasks: tasks,
+        tasks,
       };
     } catch (error) {
       console.error('Error generating column:', error);
@@ -165,7 +171,13 @@ export class AIService {
             The response should be a valid JSON object with a 'columns' array.
             Each column should have a 'name' field and an array of 'tasks'.
             Each task should have a 'title', 'description', and 'priority' (low, medium, or high).
-            The columns should logically extend the existing board structure without duplicating existing columns.`,
+            The columns should logically extend the existing board structure without duplicating existing columns.
+            
+            IMPORTANT: Create columns that make sense for the user's use case and prompt.
+            There is no fixed number of columns - create as many as needed based on the user's request.
+            The column names should be relevant to the user's workflow - you don't have to use standard names if you don't need to.
+            Create tasks only if the user requests it.
+            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.`,
           },
           {
             role: 'user',
@@ -186,17 +198,12 @@ export class AIService {
         throw new Error('Invalid response format: missing columns array');
       }
 
-      // Process each column
       const columns = result.columns.map((columnData) => {
-        // Extract column name
-        const columnName = columnData.name || columnData.title || 'New Column';
+        const columnName = columnData.name || 'New Column';
 
-        // Map tasks with default status based on column name
-        const columnStatus = this.getStatusFromColumnName(columnName);
         const tasks = (columnData.tasks || []).map((task: RawAITaskOutput) => ({
           title: task.title || 'Unnamed Task',
           description: task.description || '',
-          status: columnStatus,
         }));
 
         return {
@@ -221,19 +228,18 @@ export class AIService {
     prompt: string
   ): Promise<PreviewTask> {
     try {
-      // Find the target column and its tasks for context
       const targetColumn = boardContext.columns.find(
         (col) => col.name === columnName
       );
+
       const columnTasks = targetColumn
         ? targetColumn.tasks.map((t) => t.title).join(', ')
         : 'No existing tasks';
 
-      // Create context summary
-      const columnSummary = JSON.stringify({
+      const boardSummary = JSON.stringify({
         boardName: boardContext.name,
         boardDescription: boardContext.description,
-        columnName: columnName,
+        columnName,
         existingTasks: columnTasks,
       });
 
@@ -243,9 +249,11 @@ export class AIService {
           {
             role: 'system',
             content: `You are an AI assistant for a Kanban board application called Flow Forge. 
-            A user has the following context: ${columnSummary}
+            A user has the following context: ${boardSummary}
             Your task is to generate a single task that fits well with the existing tasks in the column.
-            The response should be a valid JSON object representing a task with 'title', 'description', and 'priority' (low, medium, or high) fields.`,
+            The response should be a valid JSON object representing a task with 'title', 'description', and 'status' (Todo, Doing, or Done) fields.
+            The task should have an array of 'subtasks' with 'title' and 'description'.
+            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.`,
           },
           {
             role: 'user',
@@ -265,7 +273,6 @@ export class AIService {
       return {
         title: taskData.title || 'Unnamed Task',
         description: taskData.description || '',
-        status: this.getStatusFromColumnName(columnName),
       };
     } catch (error) {
       console.error('Error generating task:', error);
@@ -274,26 +281,38 @@ export class AIService {
   }
 
   /**
-   * Improve a task description based on user request
+   * Improve a task description based on user prompt
    */
   async improveTaskDescription(
     taskTitle: string,
     taskDescription: string,
-    request: string
+    prompt: string
   ): Promise<{ title: string; description: string }> {
     try {
+      const taskSummary = JSON.stringify({
+        taskTitle,
+        taskDescription,
+      });
+
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           {
             role: 'system',
             content: `You are an AI assistant for a Kanban board application.
-            Your task is to improve the title and description of a task based on the user's request.
-            The response should be a valid JSON object with 'title' and 'description' fields.`,
+            A user has the following task context: ${taskSummary}.
+            Your task is to improve the title and description of a task based on the user's prompt.
+            The response should be a valid JSON object with 'title' and 'description' fields.
+            The title should be concise and descriptive.
+            The description should be detailed and provide a clear understanding of the task.
+            
+            IMPORTANT: 
+            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.
+            `,
           },
           {
             role: 'user',
-            content: `Current Task Title: ${taskTitle}\nCurrent Task Description: ${taskDescription}\nUser Request: ${request}`,
+            content: `Current Task Title: ${taskTitle}\nCurrent Task Description: ${taskDescription}\nUser prompt: ${prompt}\nTask context: ${taskSummary}`,
           },
         ],
         response_format: { type: 'json_object' },
@@ -303,13 +322,15 @@ export class AIService {
       if (!content) {
         throw new Error('OpenAI response content is null');
       }
+
       const improvedTask = JSON.parse(content) as {
-        title?: string;
-        description?: string;
+        title: string;
+        description: string;
       };
+
       return {
-        title: improvedTask.title || taskTitle,
-        description: improvedTask.description || taskDescription,
+        title: improvedTask.title,
+        description: improvedTask.description,
       };
     } catch (error) {
       console.error('Error improving task description:', error);
@@ -322,16 +343,13 @@ export class AIService {
    * @param boardContext Complete context of the existing board
    * @param columnName Name of the column to generate tasks for
    * @param prompt User's request for what tasks to generate
-   * @param count Optional number of tasks to generate (default: determined by AI based on prompt)
    */
   async generateMultipleTasks(
     boardContext: BoardContext,
     columnName: string,
-    prompt: string,
-    count?: number
+    prompt: string
   ): Promise<MultiTaskGenerationResult> {
     try {
-      // Find the target column and its tasks for context
       const targetColumn = boardContext.columns.find(
         (col) => col.name === columnName
       );
@@ -339,17 +357,12 @@ export class AIService {
         ? targetColumn.tasks.map((t) => t.title).join(', ')
         : 'No existing tasks';
 
-      // Create context summary
       const columnSummary = JSON.stringify({
         boardName: boardContext.name,
         boardDescription: boardContext.description,
         columnName: columnName,
         existingTasks: columnTasks,
       });
-
-      const countInstruction = count
-        ? `Generate exactly ${count} tasks.`
-        : 'Generate the appropriate number of tasks based on the request.';
 
       const response = await openai.client.chat.completions.create({
         model: openai.model,
@@ -359,10 +372,11 @@ export class AIService {
             content: `You are an AI assistant for a Kanban board application called Flow Forge. 
             A user has the following context: ${columnSummary}
             Your task is to generate multiple tasks that fit well with the existing column.
-            ${countInstruction}
             The response should be a valid JSON object with a 'tasks' array.
             Each task should have a 'title', 'description', and 'priority' (low, medium, or high) fields.
-            Tasks should be relevant to the column and board context.`,
+            Tasks should be relevant to the column and board context.
+            Add subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.
+            `,
           },
           {
             role: 'user',
@@ -387,7 +401,7 @@ export class AIService {
       const tasks = result.tasks.map((taskData) => ({
         title: taskData.title || 'Unnamed Task',
         description: taskData.description || '',
-        status: this.getStatusFromColumnName(columnName),
+        status: 'Todo',
       }));
 
       return { tasks };
@@ -398,13 +412,13 @@ export class AIService {
   }
 
   /**
-   * Improve a subtask description based on user request
+   * Improve a subtask description based on user prompt
    * Optionally uses parent task and board context if provided
    */
   async improveSubtaskDescription(
     subtaskTitle: string,
     subtaskDescription: string,
-    request: string,
+    prompt: string,
     parentTask?: TaskContext
   ): Promise<{ title: string; description: string }> {
     try {
@@ -414,7 +428,6 @@ export class AIService {
             {
               title: parentTask.title,
               description: parentTask.description,
-              status: parentTask.status,
               subtaskCount: parentTask.subtasks?.length || 0,
             }
           )}`
@@ -432,7 +445,7 @@ export class AIService {
           },
           {
             role: 'user',
-            content: `Current Subtask Title: ${subtaskTitle}\nCurrent Subtask Description: ${subtaskDescription}\nUser Request: ${request}`,
+            content: `Current Subtask Title: ${subtaskTitle}\nCurrent Subtask Description: ${subtaskDescription}\nUser Prompt: ${prompt}`,
           },
         ],
         response_format: { type: 'json_object' },
@@ -462,7 +475,7 @@ export class AIService {
   async breakdownTaskIntoSubtasks(
     taskTitle: string,
     taskDescription: string,
-    request: string
+    prompt: string
   ): Promise<PreviewSubtask[]> {
     try {
       const response = await openai.client.chat.completions.create({
@@ -477,7 +490,7 @@ export class AIService {
           },
           {
             role: 'user',
-            content: `Parent Task Title: ${taskTitle}\nParent Task Description: ${taskDescription}\nUser Request: ${request}`,
+            content: `Parent Task Title: ${taskTitle}\nParent Task Description: ${taskDescription}\nUser Prompt: ${prompt}`,
           },
         ],
         response_format: { type: 'json_object' },
@@ -497,28 +510,19 @@ export class AIService {
 
   private formatBoardResponse(
     boardData: RawAIBoardOutput,
-    userId: string
+    userId: Types.ObjectId
   ): PreviewBoard {
     return {
-      name: boardData.name || boardData.title || 'AI Generated Board',
+      name: boardData.name || 'AI Generated Board',
       description: boardData.description || 'Generated based on your request',
       columns: (boardData.columns || []).map((column: RawAIColumnOutput) => {
-        // Determine status based on column name
-        let columnStatus: 'Todo' | 'Doing' | 'Done' = 'Todo';
-        const columnName = (column.name || column.title || '').toLowerCase();
-
-        if (/progress|doing|ongoing|in process/i.test(columnName)) {
-          columnStatus = 'Doing';
-        } else if (/done|complete|finished/i.test(columnName)) {
-          columnStatus = 'Done';
-        }
+        const columnName = column.name || 'Unnamed Column';
 
         return {
-          name: column.name || column.title || 'Unnamed Column',
+          name: columnName,
           tasks: (column.tasks || []).map((task: RawAITaskOutput) => ({
             title: task.title || 'Unnamed Task',
             description: task.description || '',
-            status: columnStatus, // Use column's status instead of task priority
           })),
         };
       }),
@@ -532,25 +536,7 @@ export class AIService {
     return subtasksData.map((subtask: RawAISubtaskOutput) => ({
       title: subtask.title || 'Unnamed Subtask',
       description: subtask.description || '',
-      completed: false,
     }));
-  }
-
-  /**
-   * Helper to determine appropriate task status based on column name
-   */
-  private getStatusFromColumnName(
-    columnName: string
-  ): 'Todo' | 'Doing' | 'Done' {
-    const columnNameLower = columnName.toLowerCase();
-
-    if (/progress|doing|ongoing|in process/i.test(columnNameLower)) {
-      return 'Doing';
-    } else if (/done|complete|finished/i.test(columnNameLower)) {
-      return 'Done';
-    } else {
-      return 'Todo';
-    }
   }
 }
 

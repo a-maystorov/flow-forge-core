@@ -10,17 +10,14 @@ import { ITask } from '../models/task.model';
 export interface RawAITaskOutput {
   title?: string;
   description?: string;
-  priority?: string;
 }
 
 export interface RawAIColumnOutput {
-  title?: string;
   name?: string;
   tasks?: RawAITaskOutput[];
 }
 
 export interface RawAIBoardOutput {
-  title?: string;
   name?: string;
   description?: string;
   columns?: RawAIColumnOutput[];
@@ -29,7 +26,6 @@ export interface RawAIBoardOutput {
 export interface RawAISubtaskOutput {
   title?: string;
   description?: string;
-  priority?: string;
 }
 
 export interface RawAISubtaskBreakdownOutput {
@@ -38,24 +34,19 @@ export interface RawAISubtaskBreakdownOutput {
 
 // --- Preview Types ---
 // These types represent the structured data returned by the AI Service
-// They are linked to the MongoDB model interfaces but use embedded objects instead of references
 
 /**
  * Preview version of ISubtask
- * - Uses 'completed' boolean instead of database-specific fields
- * - Derived from ISubtask but replaces MongoDB-specific fields
+ * - Uses embedded subtasks instead of ObjectId references
  */
-export type PreviewSubtask = Pick<ISubtask, 'title' | 'description'> & {
-  // Preview-specific properties
-  completed: boolean; // Instead of any database-specific tracking
-};
+export type PreviewSubtask = Pick<ISubtask, 'title' | 'description'>;
 
 /**
  * Preview version of ITask
  * - Uses embedded subtasks instead of ObjectId references
  * - Maintains consistency with the ITask interface structure
  */
-export type PreviewTask = Pick<ITask, 'title' | 'description' | 'status'> & {
+export type PreviewTask = Pick<ITask, 'title' | 'description'> & {
   // Preview-specific properties with embedded subtasks
   subtasks?: PreviewSubtask[];
 };
@@ -75,15 +66,12 @@ export type PreviewColumn = Pick<IColumn, 'name'> & {
  * - Uses embedded columns instead of ObjectId references
  * - Uses string userId instead of Types.ObjectId
  */
-export type PreviewBoard = Pick<IBoard, 'name'> & {
+export type PreviewBoard = Pick<IBoard, 'name' | 'ownerId'> & {
   // Additional fields not in IBoard
   description?: string;
 
   // Instead of columns: Types.ObjectId[], we embed the columns
   columns: PreviewColumn[];
-
-  // String form of ownerId instead of Types.ObjectId
-  ownerId: string;
 };
 
 // --- Context Interfaces ---
@@ -103,7 +91,6 @@ export interface ColumnContext {
 export interface TaskContext {
   title: string;
   description?: string;
-  status: 'Todo' | 'Doing' | 'Done';
   subtasks?: SubtaskContext[];
 }
 
@@ -113,7 +100,6 @@ export interface TaskContext {
 export interface SubtaskContext {
   title: string;
   description?: string;
-  completed: boolean;
 }
 
 /**
