@@ -14,7 +14,7 @@ interface MessageIntent {
     | 'improve_task'
     | 'break_down_task'
     | 'general_conversation';
-  userId?: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
   taskTitle?: string;
   taskDescription?: string;
 }
@@ -117,11 +117,13 @@ class ChatService {
   /**
    * Process a user message and generate an AI response
    * @param chatId - The ID of the chat
+   * @param userId - The ID of the user
    * @param userMessage - The message from the user
    * @returns The AI response message
    */
   async processUserMessage(
     chatId: string | mongoose.Types.ObjectId,
+    userId: mongoose.Types.ObjectId,
     userMessage: string
   ) {
     try {
@@ -135,7 +137,7 @@ class ChatService {
       await this.addMessage(chatObjectId, MessageRole.USER, userMessage);
 
       // Step 2: Determine the intent of the user message
-      const intent = await this.determineMessageIntent(userMessage);
+      const intent = await this.determineMessageIntent(userMessage, userId);
 
       // Step 3: Generate an appropriate response based on the intent
       let responseContent = '';
@@ -220,10 +222,12 @@ class ChatService {
   /**
    * Determine the intent of a user message using LLM classification
    * @param message - The user's message
+   * @param userId - The ID of the user
    * @returns The detected intent and relevant context
    */
   private async determineMessageIntent(
-    message: string
+    message: string,
+    userId: mongoose.Types.ObjectId
   ): Promise<MessageIntent> {
     try {
       const response = await openai.client.chat.completions.create({
@@ -270,6 +274,7 @@ class ChatService {
           | 'improve_task'
           | 'break_down_task'
           | 'general_conversation',
+        userId,
       };
 
       // Add any extracted context
@@ -287,6 +292,7 @@ class ChatService {
       // If LLM classification fails, return general conversation as default
       return {
         action: 'general_conversation',
+        userId,
       };
     }
   }

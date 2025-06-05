@@ -79,7 +79,20 @@
 
       socket.on('chat message', (msg) => {
         const item = document.createElement('li');
-        item.textContent = msg;
+
+        try {
+          const parsed = JSON.parse(msg);
+          const content = parsed.message || parsed.error || '';
+          const action = parsed.action ? `\n[action: ${parsed.action}]` : '';
+          const data = parsed.data
+            ? `\n[data]: ${JSON.stringify(parsed.data, null, 2)}`
+            : '';
+
+          item.textContent = `[${parsed.from}] ${content}${action}${data}`;
+        } catch {
+          item.textContent = msg;
+        }
+
         messages.appendChild(item);
         window.scrollTo(0, document.body.scrollHeight);
       });
