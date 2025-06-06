@@ -6,27 +6,26 @@ import { ITask } from '../models/task.model';
 
 // --- Raw AI Output Types ---
 // These represent the structure of JSON data returned by the OpenAI API
+export interface RawAISubtaskOutput {
+  title: string;
+  description: string;
+}
 
 export interface RawAITaskOutput {
-  title?: string;
-  description?: string;
-  subtasks?: RawAITaskOutput[];
+  title: string;
+  description: string;
+  subtasks?: RawAISubtaskOutput[];
 }
 
 export interface RawAIColumnOutput {
-  name?: string;
+  name: string;
   tasks?: RawAITaskOutput[];
 }
 
 export interface RawAIBoardOutput {
-  name?: string;
-  description?: string;
+  name: string;
+  description: string;
   columns?: RawAIColumnOutput[];
-}
-
-export interface RawAISubtaskOutput {
-  title?: string;
-  description?: string;
 }
 
 export interface RawAISubtaskBreakdownOutput {
