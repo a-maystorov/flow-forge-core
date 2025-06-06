@@ -10,6 +10,7 @@ import { ITask } from '../models/task.model';
 export interface RawAITaskOutput {
   title?: string;
   description?: string;
+  subtasks?: RawAITaskOutput[];
 }
 
 export interface RawAIColumnOutput {

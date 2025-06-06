@@ -32,15 +32,29 @@ export class AIService {
             role: 'system',
             content: `You are an AI assistant for a Kanban board application called Flow Forge. 
             Your task is to generate a structured board with columns and tasks based on the user's prompt.
-            The response should be a valid JSON object representing a board structure with a 'title', 'description', and 'columns'.
-            Each column should have a 'title' and an array of 'tasks'.
-            Each task should have a 'title', 'description', and 'status' (Todo, Doing, or Done).
-            Each task should have an array of 'subtasks' with 'title' and 'description'.
+            The response should be a valid JSON object representing a board structure with a 'name', 'description', and 'columns'.
             
-            IMPORTANT: Create a board with columns that make sense for the user's use case and prompt.
-            There is no fixed number of columns - create as many as needed based on the user's request.
-            The column names should be relevant to the user's workflow - you don't have to use standard names if you don't need to.
-            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.`,
+            COLUMNS:
+            - Each column MUST have a clear, descriptive 'name' (e.g., 'Backlog', 'To Do', 'In Progress', 'Review', 'Done')
+            - The first column should be for planning/backlog items
+            - Subsequent columns should represent stages of progress
+            - Include 3-6 columns total based on the workflow
+            
+            TASKS:
+            - All tasks should initially be placed in the first column (Backlog/To Do)
+            - Each task MUST have:
+              - 'title': A clear, concise title
+              - 'description': A detailed description of the task
+              - 'subtasks': An array of 2-5 subtasks for each task
+            - Each subtask should have:
+              - 'title': A clear action item
+              - 'description': Additional details if needed
+            
+            FORMAT REQUIREMENTS:
+            - Use double quotes for all JSON properties
+            - Include ALL tasks in the first column initially
+            - Ensure all required fields are present
+            - The response must be valid JSON`,
           },
           {
             role: 'user',
@@ -512,20 +526,47 @@ export class AIService {
     boardData: RawAIBoardOutput,
     userId: Types.ObjectId
   ): PreviewBoard {
+    // Extract all tasks from all columns
+    const allTasks: PreviewTask[] = [];
+
+    // Process each column and collect all tasks
+    (boardData.columns || []).forEach((column: RawAIColumnOutput) => {
+      const columnTasks = (column.tasks || []).map((task: RawAITaskOutput) => ({
+        title: task.title || 'Unnamed Task',
+        description: task.description || '',
+        subtasks: (task.subtasks || []).map((subtask) => ({
+          title: subtask.title || 'Unnamed Subtask',
+          description: subtask.description || '',
+        })),
+      }));
+
+      allTasks.push(...columnTasks);
+    });
+
+    const defaultColumns = [
+      { name: 'Backlog', tasks: allTasks },
+      { name: 'To Do', tasks: [] },
+      { name: 'In Progress', tasks: [] },
+      { name: 'Done', tasks: [] },
+    ];
+
+    const columns =
+      (boardData.columns || []).length > 0 &&
+      boardData.columns!.some((col) => col.name?.trim())
+        ? boardData.columns!.map((column) => ({
+            name: column.name || 'Unnamed Column',
+            tasks:
+              column.name?.toLowerCase().includes('backlog') ||
+              column.name?.toLowerCase().includes('todo')
+                ? allTasks
+                : [],
+          }))
+        : defaultColumns;
+
     return {
       name: boardData.name || 'AI Generated Board',
       description: boardData.description || 'Generated based on your request',
-      columns: (boardData.columns || []).map((column: RawAIColumnOutput) => {
-        const columnName = column.name || 'Unnamed Column';
-
-        return {
-          name: columnName,
-          tasks: (column.tasks || []).map((task: RawAITaskOutput) => ({
-            title: task.title || 'Unnamed Task',
-            description: task.description || '',
-          })),
-        };
-      }),
+      columns,
       ownerId: userId,
     };
   }
