@@ -217,36 +217,38 @@ class ChatService {
           break;
 
         case 'improve_task':
-          if (intent.taskTitle && intent.taskDescription) {
-            const taskResult = await this.handleTaskImprovement(
-              intent.taskTitle,
-              intent.taskDescription,
+          try {
+            const improvementResult = await AIService.improveTaskDescription(
               userMessage,
+              boardContext,
               chatContext
             );
 
-            if (boardContext.columns && boardContext.columns.length > 0) {
-              const updatedColumns = boardContext.columns.map((column) => ({
-                ...column,
-                tasks: column.tasks.map((task) =>
-                  task.title === intent.taskTitle
-                    ? {
-                        ...task,
-                        ...taskResult,
-                        description: taskResult.description || '',
-                      }
-                    : task
-                ),
-              }));
+            const updatedColumns = JSON.parse(
+              JSON.stringify(boardContext.columns)
+            );
+            updatedColumns[improvementResult.columnIndex].tasks[
+              improvementResult.taskIndex
+            ] = {
+              ...updatedColumns[improvementResult.columnIndex].tasks[
+                improvementResult.taskIndex
+              ],
+              title: improvementResult.title,
+              description: improvementResult.description,
+            };
 
-              await updateBoardContext({ columns: updatedColumns });
-            }
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
 
-            actionResult = taskResult;
-            responseContent = `✨ I've enhanced the task "${taskResult.title}". Here's what I've done:\n\n• **New Title**: ${taskResult.title}\n• **Updated Description**: ${taskResult.description || 'No description'}\n\nWould you like me to:\n• Make it more detailed?\n• Break it down into smaller steps?\n• Adjust the priority or add labels?`;
-          } else {
+            actionResult = {
+              title: improvementResult.title,
+              description: improvementResult.description,
+            };
+            responseContent = `I've improved the task "${improvementResult.title}" based on your request.`;
+          } catch (error) {
+            console.error('Error improving task:', error);
             responseContent =
-              "I'd be happy to improve a task for you. Could you please specify which task you'd like me to work on?";
+              'I had trouble improving the task. Could you please provide more details about which task you want to improve?';
           }
           break;
 
@@ -262,18 +264,17 @@ class ChatService {
             if (boardContext.columns && boardContext.columns.length > 0) {
               const updatedColumns = boardContext.columns.map((column) => ({
                 ...column,
-                tasks: column.tasks.map((task) => {
-                  if (task.title === intent.taskTitle) {
-                    return {
-                      ...task,
-                      subtasks: subtasksResult.map((st) => ({
-                        title: st.title,
-                        description: st.description || '',
-                      })),
-                    };
-                  }
-                  return task;
-                }),
+                tasks: column.tasks.map((task) =>
+                  task.title === intent.taskTitle
+                    ? {
+                        ...task,
+                        subtasks: subtasksResult.map((st) => ({
+                          title: st.title,
+                          description: st.description || '',
+                        })),
+                      }
+                    : task
+                ),
               }));
 
               await updateBoardContext({ columns: updatedColumns });
@@ -423,22 +424,19 @@ class ChatService {
 
   /**
    * Handle improving a task description
-   * @param taskTitle - The current title of the task
-   * @param taskDescription - The current description of the task
    * @param userRequest - The user's request for improvement
+   * @param boardContext - The current board context
    * @param chatContext - The chat context for the user
-   * @returns The improved task
+   * @returns The improved task details with position information
    */
   private async handleTaskImprovement(
-    taskTitle: string,
-    taskDescription: string,
     userRequest: string,
+    boardContext: BoardContext,
     chatContext: ChatContext
   ) {
     return await AIService.improveTaskDescription(
-      taskTitle,
-      taskDescription,
       userRequest,
+      boardContext,
       chatContext
     );
   }
@@ -446,8 +444,8 @@ class ChatService {
   /**
    * Handle breaking down a task into subtasks
    * @param taskTitle - The title of the task to break down
-   * @param taskDescription - The description of the task
-   * @param userRequest - The user's request for breaking down
+   * @param taskDescription - The description of the task to break down
+   * @param userRequest - The user's request for breaking down the task
    * @param chatContext - The chat context for the user
    * @returns The generated subtasks
    */

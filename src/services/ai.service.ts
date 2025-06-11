@@ -304,39 +304,43 @@ export class AIService {
   }
 
   /**
-   * Improve a task description based on user prompt
+   * Improve a task description based on user prompt and board context
    */
   async improveTaskDescription(
-    taskTitle: string,
-    taskDescription: string,
-    prompt: string,
+    userPrompt: string,
+    boardContext: BoardContext,
     chatContext: ChatContext
-  ): Promise<{ title: string; description: string }> {
+  ): Promise<{
+    title: string;
+    description: string;
+    columnIndex: number;
+    taskIndex: number;
+  }> {
     try {
-      const taskSummary = JSON.stringify({
-        taskTitle,
-        taskDescription,
-      });
-
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           {
             role: 'system',
             content: `You are an AI assistant for a Kanban board application.
-            A user has the following task context: ${taskSummary}.
-            Your task is to improve the title and description of a task based on the user's prompt.
-            The response should be a valid JSON object with 'title' and 'description' fields.
-            The title should be concise and descriptive.
-            The description should be detailed and provide a clear understanding of the task.
+            The current board has the following context: ${JSON.stringify(boardContext, null, 2)}
             
-            IMPORTANT: 
-            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.
-            `,
+            Your task is to:
+            1. Identify which task the user wants to improve based on their message
+            2. Generate an improved title and description for that task
+            3. Return the column index and task index of the identified task
+            
+            The response should be a valid JSON object with:
+            - columnIndex: number (index of the column containing the task)
+            - taskIndex: number (index of the task in its column)
+            - title: string (improved title)
+            - description: string (improved description)
+            
+            If the task cannot be clearly identified, return null for all fields.`,
           },
           {
             role: 'user',
-            content: `Current Task Title: ${taskTitle}\nCurrent Task Description: ${taskDescription}\nUser prompt: ${prompt}\nTask context: ${taskSummary}`,
+            content: `User request: ${userPrompt}`,
           },
           ...chatContext,
         ],
@@ -345,17 +349,25 @@ export class AIService {
 
       const content = response.choices[0].message.content;
       if (!content) {
-        throw new Error('OpenAI response content is null');
+        throw new Error('No content in AI response');
       }
 
-      const improvedTask = JSON.parse(content) as {
-        title: string;
-        description: string;
-      };
+      const result = JSON.parse(content);
+
+      if (
+        result.columnIndex === undefined ||
+        result.taskIndex === undefined ||
+        !result.title ||
+        !result.description
+      ) {
+        throw new Error('Invalid response format from AI');
+      }
 
       return {
-        title: improvedTask.title,
-        description: improvedTask.description,
+        columnIndex: result.columnIndex,
+        taskIndex: result.taskIndex,
+        title: result.title,
+        description: result.description,
       };
     } catch (error) {
       console.error('Error improving task description:', error);
