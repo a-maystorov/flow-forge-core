@@ -1,9 +1,11 @@
 import mongoose, { Schema, Types } from 'mongoose';
+import { BoardContext } from '../types/ai.types';
 
 export interface IChat {
   userId: Types.ObjectId;
   title: string;
   lastMessageAt: Date;
+  boardContext: BoardContext;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,13 +26,53 @@ const chatSchema = new Schema<IChat>(
       type: Date,
       default: Date.now,
     },
+    boardContext: {
+      name: {
+        type: String,
+        default: '',
+      },
+      description: {
+        type: String,
+        default: '',
+      },
+      columns: [
+        {
+          name: {
+            type: String,
+            required: true,
+          },
+          tasks: [
+            {
+              title: {
+                type: String,
+                required: true,
+              },
+              description: {
+                type: String,
+                default: '',
+              },
+              subtasks: [
+                {
+                  title: {
+                    type: String,
+                    required: true,
+                  },
+                  description: {
+                    type: String,
+                    default: '',
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   },
   { timestamps: true }
 );
 
-// index for faster queries by userId
 chatSchema.index({ userId: 1 });
-// index for sorting by last message
 chatSchema.index({ lastMessageAt: -1 });
 
 const Chat = mongoose.model<IChat>('Chat', chatSchema);

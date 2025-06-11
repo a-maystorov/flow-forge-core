@@ -13,6 +13,7 @@ import { Server } from 'socket.io';
 import { createServer } from 'http';
 import chatService from './services/chat.service';
 import mongoose from 'mongoose';
+import Chat from './models/chat.model';
 
 dotenv.config();
 
@@ -39,28 +40,54 @@ app.get('/chat-test', (req, res) => {
 
 io.on('connection', (socket) => {
   socket.on('chat message', async (msg) => {
-    const chatId = '66610a87b983f79ff5a71bb6'; // replace with actual or mock chatId
-    const userId = new mongoose.Types.ObjectId('66610a87b983f79ff5a71bb6'); // replace with actual or mock userId
-
-    // 1. Emit the user's message back to the chat
-    socket.emit('chat message', JSON.stringify({ from: 'User', message: msg }));
-
-    // 2. Emit loading message
-    const loadingMsgId = Date.now().toString(); // Unique ID for identifying and replacing later
-    socket.emit(
-      'chat message',
-      JSON.stringify({
-        from: 'AI Assistant',
-        loading: true,
-        id: loadingMsgId,
-        message: 'Thinking...',
-      })
-    );
-
     try {
+      // Create or get a chat for this user
+      const userId = new mongoose.Types.ObjectId('66610a87b983f79ff5a71bb6'); // replace with actual or mock userId
+
+      // Try to get existing chats for this user
+      const existingChats = await Chat.find({ userId })
+        .sort({ lastMessageAt: -1 })
+        .limit(1);
+      let chatId: string | mongoose.Types.ObjectId;
+
+      if (existingChats.length > 0) {
+        // Use the most recent chat
+        chatId = existingChats[0]._id;
+      } else {
+        // Create a new chat if none exists
+        const newChat = await chatService.createChat(userId, 'New Chat');
+        chatId = newChat._id;
+      }
+
+      // 1. Emit the user's message back to the chat
+      socket.emit(
+        'chat message',
+        JSON.stringify({ from: 'User', message: msg })
+      );
+
+      // 2. Emit loading message
+      const loadingMsgId = Date.now().toString();
+      socket.emit(
+        'chat message',
+        JSON.stringify({
+          from: 'AI Assistant',
+          loading: true,
+          id: loadingMsgId,
+          message: 'Thinking...',
+        })
+      );
+
       const result = await chatService.processUserMessage(chatId, userId, msg);
 
-      // 3. Send AI response (optionally include the loadingMsgId if you want to replace it in UI)
+      // Log the board context to the console for debugging
+      if (result.boardContext) {
+        console.log(
+          'Board Context:',
+          JSON.stringify(result.boardContext, null, 2)
+        );
+      }
+
+      // 3. Send AI response with board context if available
       socket.emit(
         'chat message',
         JSON.stringify(
@@ -69,6 +96,7 @@ io.on('connection', (socket) => {
             id: loadingMsgId,
             action: result.action,
             message: result.message.content,
+            boardContext: result.boardContext, // Include the board context
             data: result.result,
           },
           null,

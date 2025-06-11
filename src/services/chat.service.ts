@@ -2,8 +2,14 @@ import mongoose from 'mongoose';
 import { openai } from '../config/openai';
 import Chat from '../models/chat.model';
 import Message, { MessageRole } from '../models/message.model';
-import { ChatContext, PreviewBoard, PreviewSubtask } from '../types/ai.types';
+import {
+  BoardContext,
+  ChatContext,
+  PreviewBoard,
+  PreviewSubtask,
+} from '../types/ai.types';
 import AIService from './ai.service';
+import BoardContextService from './board-context.service';
 
 /**
  * Interface for message intent results
@@ -39,9 +45,13 @@ class ChatService {
           ? new mongoose.Types.ObjectId(userId)
           : userId;
 
+      // Initialize with empty board context
+      const boardContext = BoardContextService.getEmptyBoardContext();
+
       const chat = new Chat({
         userId: userObjectId,
         title: initialTitle,
+        boardContext,
       });
 
       await chat.save();
@@ -126,14 +136,17 @@ class ChatService {
     userId: mongoose.Types.ObjectId,
     userMessage: string
   ) {
-    try {
-      // Convert chatId to ObjectId if it's a string
-      const chatObjectId =
-        typeof chatId === 'string'
-          ? new mongoose.Types.ObjectId(chatId)
-          : chatId;
+    // Convert chatId to ObjectId if it's a string
+    const chatObjectId =
+      typeof chatId === 'string' ? new mongoose.Types.ObjectId(chatId) : chatId;
 
+    try {
       await this.addMessage(chatObjectId, MessageRole.USER, userMessage);
+
+      let boardContext =
+        await BoardContextService.getBoardContext(chatObjectId);
+
+      const chatContext = await this.getChatContext(chatObjectId);
 
       const intent = await this.determineMessageIntent(userMessage, userId);
 
@@ -144,21 +157,48 @@ class ChatService {
         | PreviewSubtask[]
         | null = null;
 
+      let isBoardContextUpdated = false;
+
+      const updateBoardContext = async (updates: Partial<BoardContext>) => {
+        boardContext = { ...boardContext, ...updates };
+        isBoardContextUpdated = true;
+        return BoardContextService.updateBoardContext(chatObjectId, updates);
+      };
+
       switch (intent.action) {
         case 'generate_board':
           if (intent.userId) {
-            const chatContext = await this.getChatContext(chatObjectId);
-            const boardResult = await this.handleBoardGeneration(
+            const newBoard = await this.handleBoardGeneration(
               userMessage,
               intent.userId,
               chatContext
             );
-            actionResult = boardResult;
-            const taskCount = boardResult.columns.reduce(
+
+            const updatedBoardContext = {
+              name: newBoard.name,
+              description: newBoard.description || '',
+              columns: newBoard.columns.map((col) => ({
+                name: col.name,
+                tasks: (col.tasks || []).map((task) => ({
+                  title: task.title,
+                  description: task.description || '',
+                  subtasks: (task.subtasks || []).map((subtask) => ({
+                    title: subtask.title,
+                    description: subtask.description || '',
+                  })),
+                })),
+              })),
+            };
+
+            await updateBoardContext(updatedBoardContext);
+            boardContext = { ...boardContext, ...updatedBoardContext };
+
+            actionResult = newBoard;
+            const taskCount = newBoard.columns.reduce(
               (total, col) => total + (col.tasks?.length || 0),
               0
             );
-            responseContent = `✅ I've created a new board called "${boardResult.name}" with ${boardResult.columns.length} columns: ${boardResult.columns.map((c) => `"${c.name}"`).join(', ')}.\n\nThe board includes ${taskCount} tasks in total.\n\nWould you like me to:\n• Adjust any column names or workflows?\n• Add more tasks to a specific column?\n• Change the board's structure?`;
+            responseContent = `✅ I've created a new board called "${newBoard.name}" with ${newBoard.columns.length} columns: ${newBoard.columns.map((c) => `"${c.name}"`).join(', ')}.\n\nThe board includes ${taskCount} tasks in total.\n\nWould you like me to:\n• Adjust any column names or workflows?\n• Add more tasks to a specific column?\n• Change the board's structure?`;
           } else {
             responseContent =
               '🔍 Oops! I need to know which user this board belongs to. Could you please sign in or provide your user ID? This helps me save and organize your boards properly.';
@@ -178,15 +218,32 @@ class ChatService {
 
         case 'improve_task':
           if (intent.taskTitle && intent.taskDescription) {
-            const chatContext = await this.getChatContext(chatObjectId);
             const taskResult = await this.handleTaskImprovement(
               intent.taskTitle,
               intent.taskDescription,
               userMessage,
               chatContext
             );
+
+            if (boardContext.columns && boardContext.columns.length > 0) {
+              const updatedColumns = boardContext.columns.map((column) => ({
+                ...column,
+                tasks: column.tasks.map((task) =>
+                  task.title === intent.taskTitle
+                    ? {
+                        ...task,
+                        ...taskResult,
+                        description: taskResult.description || '',
+                      }
+                    : task
+                ),
+              }));
+
+              await updateBoardContext({ columns: updatedColumns });
+            }
+
             actionResult = taskResult;
-            responseContent = `✨ I've enhanced the task "${taskResult.title}". Here's what I've done:\n\n• **New Title**: ${taskResult.title}\n• **Updated Description**: ${taskResult.description}\n\nWould you like me to:\n• Make it more detailed?\n• Break it down into smaller steps?\n• Adjust the priority or add labels?`;
+            responseContent = `✨ I've enhanced the task "${taskResult.title}". Here's what I've done:\n\n• **New Title**: ${taskResult.title}\n• **Updated Description**: ${taskResult.description || 'No description'}\n\nWould you like me to:\n• Make it more detailed?\n• Break it down into smaller steps?\n• Adjust the priority or add labels?`;
           } else {
             responseContent =
               "I'd be happy to improve a task for you. Could you please specify which task you'd like me to work on?";
@@ -195,13 +252,33 @@ class ChatService {
 
         case 'break_down_task':
           if (intent.taskTitle && intent.taskDescription) {
-            const chatContext = await this.getChatContext(chatObjectId);
             const subtasksResult = await this.handleTaskBreakdown(
               intent.taskTitle,
               intent.taskDescription,
               userMessage,
               chatContext
             );
+
+            if (boardContext.columns && boardContext.columns.length > 0) {
+              const updatedColumns = boardContext.columns.map((column) => ({
+                ...column,
+                tasks: column.tasks.map((task) => {
+                  if (task.title === intent.taskTitle) {
+                    return {
+                      ...task,
+                      subtasks: subtasksResult.map((st) => ({
+                        title: st.title,
+                        description: st.description || '',
+                      })),
+                    };
+                  }
+                  return task;
+                }),
+              }));
+
+              await updateBoardContext({ columns: updatedColumns });
+            }
+
             actionResult = subtasksResult;
             responseContent = `🔨 I've broken down "${intent.taskTitle}" into ${subtasksResult.length} clear steps:\n\n${subtasksResult.map((st, i) => `${i + 1}. ${st.title}`).join('\n')}\n\nWould you like me to:\n• Add more details to any subtask?\n• Set priorities or assignees?\n• Adjust the order of these steps?`;
           } else {
@@ -217,7 +294,6 @@ class ChatService {
             chatContext
           );
 
-          // Add a friendly follow-up if the response doesn't end with a question or exclamation
           if (
             !['?', '!'].some((char) => responseContent.trim().endsWith(char))
           ) {
@@ -233,10 +309,15 @@ class ChatService {
         responseContent
       );
 
+      if (isBoardContextUpdated) {
+        boardContext = await BoardContextService.getBoardContext(chatObjectId);
+      }
+
       return {
         message: assistantMessage,
         action: intent.action,
         result: actionResult,
+        boardContext: isBoardContextUpdated ? boardContext : undefined,
       };
     } catch (error) {
       console.error('Error processing user message:', error);
