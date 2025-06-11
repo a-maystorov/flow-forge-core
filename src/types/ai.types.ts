@@ -3,6 +3,7 @@ import { IBoard } from '../models/board.model';
 import { IColumn } from '../models/column.model';
 import { ISubtask } from '../models/subtask.model';
 import { ITask } from '../models/task.model';
+import { MessageRole } from '../models/message.model';
 
 // --- Raw AI Output Types ---
 // These represent the structure of JSON data returned by the OpenAI API
@@ -135,3 +136,11 @@ export interface MultiColumnGenerationResult {
 export interface MultiTaskGenerationResult {
   tasks: PreviewTask[];
 }
+
+/**
+ * Interface for chat context to provide to the AI for more accurate responses
+ */
+export type ChatContext = Array<{
+  role: MessageRole;
+  content: string;
+}>;

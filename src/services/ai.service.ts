@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import { openai } from '../config/openai';
 import {
   BoardContext,
+  ChatContext,
   MultiColumnGenerationResult,
   MultiTaskGenerationResult,
   PreviewBoard,
@@ -22,7 +23,8 @@ export class AIService {
    */
   async generateBoardSuggestion(
     prompt: string,
-    userId: Types.ObjectId
+    userId: Types.ObjectId,
+    chatContext: ChatContext
   ): Promise<PreviewBoard> {
     try {
       const response = await openai.client.chat.completions.create({
@@ -60,6 +62,7 @@ export class AIService {
             role: 'user',
             content: prompt,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -81,7 +84,8 @@ export class AIService {
    */
   async generateColumn(
     boardContext: BoardContext,
-    prompt: string
+    prompt: string,
+    chatContext: ChatContext
   ): Promise<PreviewColumn> {
     try {
       // Create a summarized board context for the prompt
@@ -116,6 +120,7 @@ export class AIService {
             role: 'user',
             content: prompt,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -155,6 +160,7 @@ export class AIService {
   async generateMultipleColumns(
     boardContext: BoardContext,
     prompt: string,
+    chatContext: ChatContext,
     count?: number
   ): Promise<MultiColumnGenerationResult> {
     try {
@@ -197,6 +203,7 @@ export class AIService {
             role: 'user',
             content: prompt,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -239,7 +246,8 @@ export class AIService {
   async generateTask(
     boardContext: BoardContext,
     columnName: string,
-    prompt: string
+    prompt: string,
+    chatContext: ChatContext
   ): Promise<PreviewTask> {
     try {
       const targetColumn = boardContext.columns.find(
@@ -273,6 +281,7 @@ export class AIService {
             role: 'user',
             content: prompt,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -300,7 +309,8 @@ export class AIService {
   async improveTaskDescription(
     taskTitle: string,
     taskDescription: string,
-    prompt: string
+    prompt: string,
+    chatContext: ChatContext
   ): Promise<{ title: string; description: string }> {
     try {
       const taskSummary = JSON.stringify({
@@ -328,6 +338,7 @@ export class AIService {
             role: 'user',
             content: `Current Task Title: ${taskTitle}\nCurrent Task Description: ${taskDescription}\nUser prompt: ${prompt}\nTask context: ${taskSummary}`,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -361,7 +372,8 @@ export class AIService {
   async generateMultipleTasks(
     boardContext: BoardContext,
     columnName: string,
-    prompt: string
+    prompt: string,
+    chatContext: ChatContext
   ): Promise<MultiTaskGenerationResult> {
     try {
       const targetColumn = boardContext.columns.find(
@@ -396,6 +408,7 @@ export class AIService {
             role: 'user',
             content: prompt,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -433,6 +446,7 @@ export class AIService {
     subtaskTitle: string,
     subtaskDescription: string,
     prompt: string,
+    chatContext: ChatContext,
     parentTask?: TaskContext
   ): Promise<{ title: string; description: string }> {
     try {
@@ -461,6 +475,7 @@ export class AIService {
             role: 'user',
             content: `Current Subtask Title: ${subtaskTitle}\nCurrent Subtask Description: ${subtaskDescription}\nUser Prompt: ${prompt}`,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -489,7 +504,8 @@ export class AIService {
   async breakdownTaskIntoSubtasks(
     taskTitle: string,
     taskDescription: string,
-    prompt: string
+    prompt: string,
+    chatContext: ChatContext
   ): Promise<PreviewSubtask[]> {
     try {
       const response = await openai.client.chat.completions.create({
@@ -506,6 +522,7 @@ export class AIService {
             role: 'user',
             content: `Parent Task Title: ${taskTitle}\nParent Task Description: ${taskDescription}\nUser Prompt: ${prompt}`,
           },
+          ...chatContext,
         ],
         response_format: { type: 'json_object' },
       });
@@ -578,6 +595,62 @@ export class AIService {
       title: subtask.title || 'Unnamed Subtask',
       description: subtask.description || '',
     }));
+  }
+
+  /**
+   * Generate a friendly and helpful response for general conversation
+   * @param message - The user's message
+   * @param chatContext - Optional array of previous messages for context
+   * @returns A natural language response
+   */
+  async generateGeneralResponse(
+    message: string,
+    chatContext: ChatContext
+  ): Promise<string> {
+    try {
+      const response = await openai.client.chat.completions.create({
+        model: openai.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are the Flow Forge assistant, here to help users manage their projects and tasks. 
+            
+            Your primary capabilities include:
+            - Creating and managing Kanban boards
+            - Improving and refining task descriptions
+            - Breaking down tasks into subtasks
+            - Providing workflow and productivity guidance
+            - Assisting with project planning and organization
+            
+            Your personality is:
+            - Warm, encouraging, and professional
+            - Concise in responses (1-3 sentences usually)
+            - Proactive in suggesting next steps
+            - Knowledgeable about project management best practices
+            
+            Guidelines:
+            - Keep responses clear and focused on productivity
+            - Use emojis occasionally but sparingly
+            - Always maintain a helpful and professional tone
+            - If unsure about something, ask for clarification`,
+          },
+          ...chatContext,
+          {
+            role: 'user',
+            content: message,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+      return (
+        response.choices[0].message.content ||
+        "I'm here to help! What would you like to work on today?"
+      );
+    } catch (error) {
+      console.error('Error generating general response:', error);
+      return "I'm having trouble thinking of a response right now. Could you try asking something else?";
+    }
   }
 }
 

@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { openai } from '../config/openai';
 import Chat from '../models/chat.model';
 import Message, { MessageRole } from '../models/message.model';
-import { PreviewBoard, PreviewSubtask } from '../types/ai.types';
+import { ChatContext, PreviewBoard, PreviewSubtask } from '../types/ai.types';
 import AIService from './ai.service';
 
 /**
@@ -133,13 +133,10 @@ class ChatService {
           ? new mongoose.Types.ObjectId(chatId)
           : chatId;
 
-      // Step 1: Save the user message
       await this.addMessage(chatObjectId, MessageRole.USER, userMessage);
 
-      // Step 2: Determine the intent of the user message
       const intent = await this.determineMessageIntent(userMessage, userId);
 
-      // Step 3: Generate an appropriate response based on the intent
       let responseContent = '';
       let actionResult:
         | PreviewBoard
@@ -149,30 +146,47 @@ class ChatService {
 
       switch (intent.action) {
         case 'generate_board':
-          // Generate a new board based on the user's request
           if (intent.userId) {
+            const chatContext = await this.getChatContext(chatObjectId);
             const boardResult = await this.handleBoardGeneration(
               userMessage,
-              intent.userId
+              intent.userId,
+              chatContext
             );
             actionResult = boardResult;
-            responseContent = `I've created a board suggestion for "${boardResult.name}". It includes ${boardResult.columns.length} columns with tasks. Would you like me to modify anything about this board?`;
+            const taskCount = boardResult.columns.reduce(
+              (total, col) => total + (col.tasks?.length || 0),
+              0
+            );
+            responseContent = `✅ I've created a new board called "${boardResult.name}" with ${boardResult.columns.length} columns: ${boardResult.columns.map((c) => `"${c.name}"`).join(', ')}.\n\nThe board includes ${taskCount} tasks in total.\n\nWould you like me to:\n• Adjust any column names or workflows?\n• Add more tasks to a specific column?\n• Change the board's structure?`;
           } else {
             responseContent =
-              'I need a user ID to create a board. Please try again.';
+              '🔍 Oops! I need to know which user this board belongs to. Could you please sign in or provide your user ID? This helps me save and organize your boards properly.';
+          }
+          if (responseContent === '') {
+            responseContent = `🤔 I want to make sure I understand you correctly. Could you help me by:
+            1. Being more specific about what you'd like to achieve
+            2. Using action words like "create," "update," or "suggest"
+            3. Including any relevant details or constraints
+
+            For example:
+            • "Create a project management board for my mobile app"
+            • "Help me improve this task description: [your task]"
+            • "Break down this feature into smaller tasks: [feature]"`;
           }
           break;
 
         case 'improve_task':
-          // Improve a task description
           if (intent.taskTitle && intent.taskDescription) {
+            const chatContext = await this.getChatContext(chatObjectId);
             const taskResult = await this.handleTaskImprovement(
               intent.taskTitle,
               intent.taskDescription,
-              userMessage
+              userMessage,
+              chatContext
             );
             actionResult = taskResult;
-            responseContent = `I've improved the task "${taskResult.title}". Is there anything else you'd like me to adjust about this task?`;
+            responseContent = `✨ I've enhanced the task "${taskResult.title}". Here's what I've done:\n\n• **New Title**: ${taskResult.title}\n• **Updated Description**: ${taskResult.description}\n\nWould you like me to:\n• Make it more detailed?\n• Break it down into smaller steps?\n• Adjust the priority or add labels?`;
           } else {
             responseContent =
               "I'd be happy to improve a task for you. Could you please specify which task you'd like me to work on?";
@@ -180,28 +194,39 @@ class ChatService {
           break;
 
         case 'break_down_task':
-          // Break down a task into subtasks
           if (intent.taskTitle && intent.taskDescription) {
+            const chatContext = await this.getChatContext(chatObjectId);
             const subtasksResult = await this.handleTaskBreakdown(
               intent.taskTitle,
               intent.taskDescription,
-              userMessage
+              userMessage,
+              chatContext
             );
             actionResult = subtasksResult;
-            responseContent = `I've broken down the task "${intent.taskTitle}" into ${subtasksResult.length} subtasks. Would you like me to explain any of these in more detail?`;
+            responseContent = `🔨 I've broken down "${intent.taskTitle}" into ${subtasksResult.length} clear steps:\n\n${subtasksResult.map((st, i) => `${i + 1}. ${st.title}`).join('\n')}\n\nWould you like me to:\n• Add more details to any subtask?\n• Set priorities or assignees?\n• Adjust the order of these steps?`;
           } else {
             responseContent =
               'I can help break down a task into subtasks. Which task would you like me to break down?';
           }
           break;
 
-        default:
-          // General conversation
-          responseContent =
-            "I'm your Flow Forge assistant. I can help you create boards, improve tasks, break down tasks into subtasks, and more. What would you like help with today?";
+        default: {
+          const chatContext = await this.getChatContext(chatObjectId);
+          responseContent = await AIService.generateGeneralResponse(
+            userMessage,
+            chatContext
+          );
+
+          // Add a friendly follow-up if the response doesn't end with a question or exclamation
+          if (
+            !['?', '!'].some((char) => responseContent.trim().endsWith(char))
+          ) {
+            responseContent += ' What would you like to do next?';
+          }
+          break;
+        }
       }
 
-      // Step 4: Save the assistant's response
       const assistantMessage = await this.addMessage(
         chatObjectId,
         MessageRole.ASSISTANT,
@@ -277,7 +302,6 @@ class ChatService {
         userId,
       };
 
-      // Add any extracted context
       if (classification.taskTitle) {
         intent.taskTitle = classification.taskTitle;
       }
@@ -301,13 +325,19 @@ class ChatService {
    * Handle the generation of a new board
    * @param userMessage - The user's message/prompt
    * @param userId - The ID of the user
+   * @param chatContext - The chat context for the user
    * @returns The generated board
    */
   private async handleBoardGeneration(
     userMessage: string,
-    userId: mongoose.Types.ObjectId
+    userId: mongoose.Types.ObjectId,
+    chatContext: ChatContext
   ) {
-    return await AIService.generateBoardSuggestion(userMessage, userId);
+    return await AIService.generateBoardSuggestion(
+      userMessage,
+      userId,
+      chatContext
+    );
   }
 
   /**
@@ -315,18 +345,20 @@ class ChatService {
    * @param taskTitle - The current title of the task
    * @param taskDescription - The current description of the task
    * @param userRequest - The user's request for improvement
-   * @param boardContext - The board context for the task
+   * @param chatContext - The chat context for the user
    * @returns The improved task
    */
   private async handleTaskImprovement(
     taskTitle: string,
     taskDescription: string,
-    userRequest: string
+    userRequest: string,
+    chatContext: ChatContext
   ) {
     return await AIService.improveTaskDescription(
       taskTitle,
       taskDescription,
-      userRequest
+      userRequest,
+      chatContext
     );
   }
 
@@ -335,18 +367,38 @@ class ChatService {
    * @param taskTitle - The title of the task to break down
    * @param taskDescription - The description of the task
    * @param userRequest - The user's request for breaking down
+   * @param chatContext - The chat context for the user
    * @returns The generated subtasks
    */
   private async handleTaskBreakdown(
     taskTitle: string,
     taskDescription: string,
-    userRequest: string
+    userRequest: string,
+    chatContext: ChatContext
   ) {
     return await AIService.breakdownTaskIntoSubtasks(
       taskTitle,
       taskDescription,
-      userRequest
+      userRequest,
+      chatContext
     );
+  }
+
+  /**
+   * Gets the chat context for a conversation
+   * @param chatId - The ID of the chat
+   * @returns Array of message objects with role and content
+   */
+  private async getChatContext(
+    chatId: string | mongoose.Types.ObjectId
+  ): Promise<ChatContext> {
+    const recentMessages = await this.getChatMessages(chatId);
+    return recentMessages
+      .slice(-10) // Get last 10 messages for context
+      .map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
   }
 }
 
