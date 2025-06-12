@@ -293,6 +293,90 @@ export class AIService {
   }
 
   /**
+   * Suggest a new position for a column based on the board context
+   * @param boardContext Complete context of the existing board
+   * @param columnName The name of the column to move
+   * @param userPrompt Optional user input about the desired position
+   * @returns The suggested new position (0-based index)
+   */
+  async moveColumn(
+    boardContext: BoardContext,
+    columnName: string,
+    userPrompt: string
+  ): Promise<{ newPosition: number }> {
+    try {
+      const currentPosition = boardContext.columns.findIndex(
+        (col) => col.name.toLowerCase() === columnName.toLowerCase()
+      );
+
+      if (currentPosition === -1) {
+        throw new Error(`Column "${columnName}" not found`);
+      }
+
+      const columnNames = boardContext.columns.map((col) => col.name);
+
+      const response = await openai.client.chat.completions.create({
+        model: openai.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful assistant for a Kanban board application.
+            Your task is to determine the best new position for a column based on the user's request.
+            
+            Current board columns (0-based positions):
+            ${columnNames.map((name, i) => `${i}. ${name}${i === currentPosition ? ' (current)' : ''}`).join('\n')}
+            
+            The column to move is: ${columnName} (currently at position ${currentPosition})
+            
+            Guidelines for column positioning:
+            1. Typical workflow goes from left to right (e.g., "To Do" → "In Progress" → "Done")
+            2. Related columns should be grouped together
+            3. Consider the user's request: ${userPrompt}
+            
+            Respond with a JSON object containing:
+            - newPosition: number (0-based index, must be between 0 and ${columnNames.length - 1})`,
+          },
+          {
+            role: 'user',
+            content:
+              userPrompt || `Where should the "${columnName}" column be moved?`,
+          },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 100,
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('No content in AI response');
+      }
+
+      const result = JSON.parse(content) as { newPosition: number };
+
+      if (
+        typeof result.newPosition !== 'number' ||
+        !Number.isInteger(result.newPosition) ||
+        result.newPosition < 0 ||
+        result.newPosition >= columnNames.length
+      ) {
+        throw new Error(
+          `Invalid position: ${result.newPosition}. Must be between 0 and ${columnNames.length - 1}`
+        );
+      }
+
+      return { newPosition: result.newPosition };
+    } catch (error) {
+      console.error('Error determining column position:', error);
+      throw new Error(
+        error instanceof Error
+          ? `Failed to determine column position: ${error.message}`
+          : 'An unknown error occurred while determining column position'
+      );
+    }
+  }
+
+  /**
    * Generate multiple columns at once with tasks for an existing board
    * @param boardContext Complete context of the existing board
    * @param prompt User's request for what columns to generate

@@ -21,6 +21,7 @@ export interface MessageIntent {
     | 'break_down_task'
     | 'generate_column'
     | 'rename_column'
+    | 'move_column'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
   taskTitle?: string;
@@ -160,6 +161,7 @@ class ChatService {
         | { title: string; description: string }
         | PreviewSubtask[]
         | { name: string }
+        | { newPosition: number }
         | null = null;
 
       let isBoardContextUpdated = false;
@@ -366,6 +368,73 @@ class ChatService {
           }
           break;
 
+        case 'move_column':
+          try {
+            if (!intent.currentColumnName) {
+              responseContent = 'Which column would you like to move?';
+              break;
+            }
+
+            const columnToMove = boardContext.columns.find(
+              (col) =>
+                col.name.toLowerCase() ===
+                intent.currentColumnName!.toLowerCase()
+            );
+
+            if (!columnToMove) {
+              responseContent = `I couldn't find a column named "${intent.currentColumnName}". Please check the name and try again.`;
+              break;
+            }
+
+            const moveResult = await AIService.moveColumn(
+              boardContext,
+              columnToMove.name,
+              userMessage
+            );
+
+            const currentPos = boardContext.columns.findIndex(
+              (col) =>
+                col.name.toLowerCase() === columnToMove.name.toLowerCase()
+            );
+
+            if (currentPos === -1) {
+              throw new Error(
+                `Column "${columnToMove.name}" not found in board context`
+              );
+            }
+
+            const newPos = moveResult.newPosition;
+
+            if (currentPos === newPos) {
+              responseContent = `The "${columnToMove.name}" column is already at position ${newPos + 1}.`;
+              break;
+            }
+
+            const updatedColumns = [...boardContext.columns];
+            const [movedColumn] = updatedColumns.splice(currentPos, 1);
+            updatedColumns.splice(newPos, 0, movedColumn);
+            const columnsWithUpdatedPositions = updatedColumns.map(
+              (col, index) => ({
+                ...col,
+                position: index,
+              })
+            );
+
+            await updateBoardContext({ columns: columnsWithUpdatedPositions });
+            boardContext = {
+              ...boardContext,
+              columns: columnsWithUpdatedPositions,
+            };
+
+            actionResult = { newPosition: newPos };
+            responseContent = `✅ I've moved the "${columnToMove.name}" column to position ${newPos + 1}. What would you like to do next?`;
+          } catch (error) {
+            console.error('Error moving column:', error);
+            responseContent =
+              'I had trouble moving the column. Could you please try again with more details?';
+          }
+          break;
+
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
           responseContent = await AIService.generateGeneralResponse(
@@ -427,7 +496,8 @@ class ChatService {
             3. break_down_task - User wants to break down a task into subtasks
             4. generate_column - User wants to add a new column to the board
             5. rename_column - User wants to rename an existing column
-            6. general_conversation - General queries not matching above intents
+            6. move_column - User wants to move a column to a different position
+            7. general_conversation - General queries not matching above intents
             
             Also extract any relevant context like board name, task title, column name, etc.
             
@@ -438,7 +508,7 @@ class ChatService {
               "taskDescription": "extracted task description if applicable",
               "boardName": "extracted board name if applicable",
               "columnName": "suggested column name if applicable",
-              "currentColumnName": "name of the column to rename if applicable"
+              "currentColumnName": "name of the column to rename or move if applicable"
             }`,
           },
           {
