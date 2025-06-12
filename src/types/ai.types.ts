@@ -125,20 +125,6 @@ export interface BoardConversion {
 }
 
 /**
- * Interface for AI-generated multi-column response
- */
-export interface MultiColumnGenerationResult {
-  columns: PreviewColumn[];
-}
-
-/**
- * Interface for AI-generated multi-task response
- */
-export interface MultiTaskGenerationResult {
-  tasks: PreviewTask[];
-}
-
-/**
  * Interface for chat context to provide to the AI for more accurate responses
  */
 export type ChatContext = Array<{

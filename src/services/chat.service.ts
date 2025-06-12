@@ -7,6 +7,7 @@ import {
   ChatContext,
   PreviewBoard,
   PreviewSubtask,
+  PreviewTask,
 } from '../types/ai.types';
 import AIService from './ai.service';
 import BoardContextService from './board-context.service';
@@ -20,6 +21,7 @@ export interface MessageIntent {
     | 'improve_task'
     | 'break_down_task'
     | 'generate_column'
+    | 'generate_multiple_columns'
     | 'rename_column'
     | 'move_column'
     | 'delete_column'
@@ -163,6 +165,7 @@ class ChatService {
         | PreviewSubtask[]
         | { name: string }
         | { newPosition: number }
+        | { columns: Array<{ name: string; tasks: PreviewTask[] }> }
         | null = null;
 
       let isBoardContextUpdated = false;
@@ -327,6 +330,45 @@ class ChatService {
           }
           break;
 
+        case 'generate_multiple_columns':
+          try {
+            const columns = await AIService.generateMultipleColumns(
+              boardContext,
+              userMessage,
+              chatContext
+            );
+
+            if (!columns || columns.length === 0) {
+              throw new Error('No columns were generated');
+            }
+
+            const updatedColumns = [
+              ...boardContext.columns,
+              ...columns.map((column) => ({
+                name: column.name,
+                position: boardContext.columns.length + columns.indexOf(column),
+                tasks: [],
+              })),
+            ];
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            actionResult = {
+              columns: columns.map((col) => ({
+                name: col.name,
+                tasks: [],
+              })),
+            };
+            const columnNames = columns.map((c) => `"${c.name}"`).join(', ');
+            responseContent = `✅ I've added ${columns.length} new columns to your board: ${columnNames}.`;
+          } catch (error) {
+            console.error('Error generating multiple columns:', error);
+            responseContent =
+              'I had trouble adding multiple columns. Could you please try again with more specific details?';
+          }
+          break;
+
         case 'rename_column':
           try {
             if (!intent.currentColumnName) {
@@ -361,7 +403,7 @@ class ChatService {
             boardContext = { ...boardContext, columns: updatedColumns };
 
             actionResult = renameResult;
-            responseContent = `✅ I've renamed the column from "${columnToRename.name}" to "${renameResult.name}". What would you like to do next?`;
+            responseContent = `✅ I've renamed the column from "${columnToRename.name}" to "${renameResult.name}".`;
           } catch (error) {
             console.error('Error renaming column:', error);
             responseContent =
@@ -550,10 +592,11 @@ class ChatService {
             2. improve_task - User wants to improve a task description
             3. break_down_task - User wants to break down a task into subtasks
             4. generate_column - User wants to add a new column to the board
-            5. rename_column - User wants to rename an existing column
-            6. move_column - User wants to move a column to a different position
-            7. delete_column - User wants to delete a column
-            8. general_conversation - General queries not matching above intents
+            5. generate_multiple_columns - User wants to add multiple new columns to the board
+            6. rename_column - User wants to rename an existing column
+            7. move_column - User wants to move a column to a different position
+            8. delete_column - User wants to delete a column
+            9. general_conversation - General queries not matching above intents
             
             Also extract any relevant context like board name, task title, column name, etc.
             
@@ -589,7 +632,10 @@ class ChatService {
           | 'improve_task'
           | 'break_down_task'
           | 'generate_column'
+          | 'generate_multiple_columns'
           | 'rename_column'
+          | 'move_column'
+          | 'delete_column'
           | 'general_conversation',
         userId,
       };

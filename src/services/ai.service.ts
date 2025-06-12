@@ -3,8 +3,6 @@ import { openai } from '../config/openai';
 import {
   BoardContext,
   ChatContext,
-  MultiColumnGenerationResult,
-  MultiTaskGenerationResult,
   PreviewBoard,
   // PreviewColumn,
   PreviewSubtask,
@@ -414,90 +412,115 @@ export class AIService {
   }
 
   /**
-   * Generate multiple columns at once with tasks for an existing board
+   * Generate multiple columns for an existing board with enhanced context awareness
    * @param boardContext Complete context of the existing board
    * @param prompt User's request for what columns to generate
-   * @param count Optional number of columns to generate (default: determined by AI based on prompt)
+   * @param chatContext Conversation history for better context understanding
+   * @param count Optional number of columns to generate (determined by AI if not specified)
+   * @returns Promise with the generated columns
    */
   async generateMultipleColumns(
     boardContext: BoardContext,
     prompt: string,
     chatContext: ChatContext,
     count?: number
-  ): Promise<MultiColumnGenerationResult> {
+  ): Promise<{ name: string }[]> {
     try {
-      const existingColumns = boardContext.columns
-        .map((col) => col.name)
-        .join(', ');
-      const boardSummary = JSON.stringify({
-        name: boardContext.name,
-        description: boardContext.description,
-        existingColumns: existingColumns,
-        columnCount: boardContext.columns.length,
-      });
+      const existingColumns = boardContext.columns.map((col) => ({
+        name: col.name,
+        position: col.position || 0,
+        taskCount: col.tasks?.length || 0,
+      }));
 
-      const countInstruction = count
-        ? `Generate exactly ${count} columns.`
-        : 'Generate the appropriate number of columns based on the request.';
+      existingColumns.sort((a, b) => a.position - b.position);
+
+      const boardContextStr = `Board: ${boardContext.name || 'Untitled Board'}
+        Description: ${boardContext.description || 'No description'}
+        Existing columns (${existingColumns.length}):\n${
+          existingColumns.length > 0
+            ? existingColumns
+                .map(
+                  (col, idx) =>
+                    `  ${idx + 1}. "${col.name}" (${col.taskCount} tasks)`
+                )
+                .join('\n')
+            : '  No columns yet'
+        }`;
+
+      const systemPrompt = `You are an AI assistant for a Kanban board application called Flow Forge.
+        Your task is to generate new columns based on the user's request and the existing board context.
+
+        ${boardContextStr}
+
+        Guidelines for generating columns:
+        1. Generate columns that logically extend the existing workflow
+        2. Use clear, concise names (2-3 words) in Title Case
+        3. Avoid duplicating existing column names (case-insensitive)
+        4. Consider the board's purpose when suggesting column names
+        5. ${count ? `Generate exactly ${count} columns.` : 'Determine the appropriate number of columns based on the request.'}
+
+        Respond with a JSON object containing an array of column objects, each with a 'name' property.`;
 
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
-          {
-            role: 'system',
-            content: `You are an AI assistant for a Kanban board application called Flow Forge. 
-            A user has the following board: ${boardSummary}
-            Your task is to generate multiple columns with relevant tasks based on the user's prompt.
-            ${countInstruction}
-            The response should be a valid JSON object with a 'columns' array.
-            Each column should have a 'name' field and an array of 'tasks'.
-            Each task should have a 'title', 'description', and 'priority' (low, medium, or high).
-            The columns should logically extend the existing board structure without duplicating existing columns.
-            
-            IMPORTANT: Create columns that make sense for the user's use case and prompt.
-            There is no fixed number of columns - create as many as needed based on the user's request.
-            The column names should be relevant to the user's workflow - you don't have to use standard names if you don't need to.
-            Create tasks only if the user requests it.
-            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.`,
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt },
           ...chatContext,
         ],
         response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 500,
       });
 
-      const content = response.choices[0].message.content;
+      const content = response.choices[0]?.message?.content;
       if (!content) {
-        throw new Error('OpenAI response content is null');
+        throw new Error('No content in AI response');
+      }
+      const parsedResponse = JSON.parse(content);
+      if (!parsedResponse.columns || !Array.isArray(parsedResponse.columns)) {
+        throw new Error(
+          'Invalid response format: missing or invalid columns array'
+        );
       }
 
-      const result = JSON.parse(content) as { columns?: RawAIColumnOutput[] };
+      const existingNames = new Set(
+        existingColumns.map((col) => col.name.toLowerCase())
+      );
 
-      if (!result.columns || !Array.isArray(result.columns)) {
-        throw new Error('Invalid response format: missing columns array');
+      const columns: Array<{ name: string }> = [];
+
+      for (const columnData of parsedResponse.columns) {
+        if (!columnData.name || typeof columnData.name !== 'string') {
+          continue;
+        }
+
+        let columnName = columnData.name.trim();
+
+        if (existingNames.has(columnName.toLowerCase())) {
+          let counter = 1;
+          while (existingNames.has(`${columnName} ${counter}`.toLowerCase())) {
+            counter++;
+          }
+          columnName = `${columnName} ${counter}`;
+        }
+
+        existingNames.add(columnName.toLowerCase());
+        columns.push({ name: columnName });
       }
 
-      const columns = result.columns.map((columnData) => {
-        const columnName = columnData.name || 'New Column';
+      if (columns.length === 0) {
+        throw new Error('No valid columns were generated');
+      }
 
-        const tasks = (columnData.tasks || []).map((task: RawAITaskOutput) => ({
-          title: task.title || 'Unnamed Task',
-          description: task.description || '',
-        }));
-
-        return {
-          name: columnName,
-          tasks: tasks,
-        };
-      });
-
-      return { columns };
+      return columns;
     } catch (error) {
       console.error('Error generating multiple columns:', error);
-      throw new Error('Failed to generate columns');
+      throw new Error(
+        error instanceof Error
+          ? `Failed to generate columns: ${error.message}`
+          : 'An unknown error occurred while generating columns'
+      );
     }
   }
 
@@ -647,7 +670,7 @@ export class AIService {
     columnName: string,
     prompt: string,
     chatContext: ChatContext
-  ): Promise<MultiTaskGenerationResult> {
+  ): Promise<PreviewTask[]> {
     try {
       const targetColumn = boardContext.columns.find(
         (col) => col.name === columnName
@@ -704,7 +727,7 @@ export class AIService {
         status: 'Todo',
       }));
 
-      return { tasks };
+      return tasks;
     } catch (error) {
       console.error('Error generating multiple tasks:', error);
       throw new Error('Failed to generate tasks');
