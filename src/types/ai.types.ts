@@ -84,6 +84,7 @@ export type PreviewBoard = Pick<IBoard, 'name' | 'ownerId'> & {
 export interface ColumnContext {
   name: string;
   tasks: TaskContext[];
+  position?: number;
 }
 
 /**

@@ -19,10 +19,12 @@ interface MessageIntent {
     | 'generate_board'
     | 'improve_task'
     | 'break_down_task'
+    | 'generate_column'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
   taskTitle?: string;
   taskDescription?: string;
+  columnName?: string;
 }
 
 /**
@@ -155,6 +157,7 @@ class ChatService {
         | PreviewBoard
         | { title: string; description: string }
         | PreviewSubtask[]
+        | { name: string }
         | null = null;
 
       let isBoardContextUpdated = false;
@@ -168,7 +171,7 @@ class ChatService {
       switch (intent.action) {
         case 'generate_board':
           if (intent.userId) {
-            const newBoard = await AIService.generateBoardSuggestion(
+            const newBoard = await AIService.generateBoard(
               userMessage,
               intent.userId,
               chatContext
@@ -288,6 +291,37 @@ class ChatService {
           }
           break;
 
+        case 'generate_column':
+          try {
+            const columnResult = await AIService.generateColumn(
+              boardContext,
+              userMessage,
+              chatContext,
+              {
+                analyzeExistingPatterns: true,
+                position: 'end',
+              }
+            );
+
+            const newColumn = {
+              name: columnResult.name,
+              position: boardContext.columns.length,
+              tasks: [],
+            };
+
+            const updatedColumns = [...boardContext.columns, newColumn];
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            actionResult = columnResult;
+            responseContent = `✅ I've created a new column: "${columnResult.name}". What would you like to do next?\n• Add tasks to this column\n• Create another column\n• Rename this column`;
+          } catch (error) {
+            console.error('Error generating column:', error);
+            responseContent =
+              'I had trouble creating a new column. Could you please try again with more details?';
+          }
+          break;
+
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
           responseContent = await AIService.generateGeneralResponse(
@@ -347,16 +381,18 @@ class ChatService {
             1. generate_board - User wants to create a new board
             2. improve_task - User wants to improve a task description
             3. break_down_task - User wants to break down a task into subtasks
-            4. general_conversation - General queries not matching above intents
+            4. generate_column - User wants to add a new column to the board
+            5. general_conversation - General queries not matching above intents
             
-            Also extract any relevant context like board name, task title, etc.
+            Also extract any relevant context like board name, task title, column name, etc.
             
             Respond with a valid JSON object containing:
             {
               "intent": "one_of_the_above_intents",
               "taskTitle": "extracted task title if applicable",
               "taskDescription": "extracted task description if applicable",
-              "boardName": "extracted board name if applicable" 
+              "boardName": "extracted board name if applicable",
+              "columnName": "suggested column name if applicable"
             }`,
           },
           {
@@ -380,6 +416,7 @@ class ChatService {
           | 'generate_board'
           | 'improve_task'
           | 'break_down_task'
+          | 'generate_column'
           | 'general_conversation',
         userId,
       };

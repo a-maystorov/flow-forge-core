@@ -6,7 +6,7 @@ import {
   MultiColumnGenerationResult,
   MultiTaskGenerationResult,
   PreviewBoard,
-  PreviewColumn,
+  // PreviewColumn,
   PreviewSubtask,
   PreviewTask,
   RawAIBoardOutput,
@@ -21,7 +21,7 @@ export class AIService {
   /**
    * Generate a complete board suggestion with columns and tasks
    */
-  async generateBoardSuggestion(
+  async generateBoard(
     prompt: string,
     userId: Types.ObjectId,
     chatContext: ChatContext
@@ -80,74 +80,124 @@ export class AIService {
   }
 
   /**
-   * Generate a single column with tasks for an existing board using complete board context
+   * Generate a single column for an existing board using complete board context
+   * @param boardContext - The current state of the board
+   * @param prompt - User's request for column generation
+   * @param chatContext - Previous conversation context
+   * @param options - Additional options for column generation
+   * @returns The generated column
    */
   async generateColumn(
     boardContext: BoardContext,
     prompt: string,
-    chatContext: ChatContext
-  ): Promise<PreviewColumn> {
+    chatContext: ChatContext,
+    options: {
+      position?: 'start' | 'end' | number;
+      analyzeExistingPatterns?: boolean;
+    } = {}
+  ): Promise<{ name: string }> {
     try {
-      // Create a summarized board context for the prompt
-      const existingColumns = boardContext.columns
-        .map((col) => col.name)
-        .join(', ');
-      const boardSummary = JSON.stringify({
-        name: boardContext.name,
-        description: boardContext.description,
-        existingColumns: existingColumns,
-        columnCount: boardContext.columns.length,
-      });
+      const { position = 'end', analyzeExistingPatterns = true } = options;
+
+      const existingColumns = boardContext.columns.map((col) => ({
+        name: col.name,
+        position: col.position || 0,
+      }));
+
+      let columnContext = '';
+      if (analyzeExistingPatterns && existingColumns.length > 0) {
+        columnContext = `Existing columns (in order):\n${existingColumns
+          .map((col) => `- "${col.name}"`)
+          .join('\n')}`;
+      }
+
+      let positionContext = '';
+      if (position === 'start') {
+        positionContext =
+          'The new column should be added at the start of the board.';
+      } else if (position === 'end') {
+        positionContext =
+          'The new column should be added at the end of the board.';
+      } else if (typeof position === 'number') {
+        positionContext = `The new column should be inserted at position ${position} (0-based index).`;
+      }
+
+      const systemPrompt = `You are an AI assistant for a Kanban board application called Flow Forge.
+      
+      Current board context:
+      - Name: ${boardContext.name || 'Untitled Board'}
+      - Description: ${boardContext.description || 'No description'}
+      - Total columns: ${existingColumns.length}
+      
+      ${columnContext}
+      
+      ${positionContext}
+      
+      Your task is to generate a single column name that fits naturally with the existing board structure.
+      Consider the following guidelines:
+      1. Column name should be clear, concise, and follow the existing naming pattern
+      2. Name should represent a stage in a workflow (e.g., "To Do", "In Progress", "Done")
+      3. Avoid duplicating existing column names
+      
+      Respond with a JSON object containing:
+      - name: string (required) - The name of the new column`;
 
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           {
             role: 'system',
-            content: `You are an AI assistant for a Kanban board application called Flow Forge. 
-            A user has the following board: ${boardSummary}
-            Your task is to generate a single column with relevant tasks based on the user's prompt.
-            The column should meaningfully extend the existing board structure.
-            The response should be a valid JSON object representing a column with a 'name' field and an array of 'tasks'.
-            Each task should have a 'title', 'description', and 'status' (Todo, Doing, or Done).
-            Each task should have an array of 'subtasks' with 'title' and 'description'.
-
-            IMPORTANT: Add tasks to the column only if the user requests it.
-            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.
-            `,
+            content: systemPrompt,
           },
           {
             role: 'user',
-            content: prompt,
+            content: `Generate a new column based on: ${prompt}`,
           },
           ...chatContext,
         ],
         response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 100,
       });
 
-      const content = response.choices[0].message.content;
+      const content = response.choices[0]?.message?.content;
       if (!content) {
-        throw new Error('OpenAI response content is null');
+        throw new Error('No content in AI response');
       }
 
-      const columnData = JSON.parse(content) as RawAIColumnOutput;
+      let columnData: { name: string };
+      try {
+        columnData = JSON.parse(content);
+      } catch (error) {
+        throw new Error('Invalid JSON response from AI: ' + error);
+      }
 
-      // Extract column name from AI response or use a default
-      const columnName = columnData.name || 'New Column';
+      if (!columnData.name || typeof columnData.name !== 'string') {
+        throw new Error('Invalid or missing column name in AI response');
+      }
 
-      // Map tasks with default status based on column name
-      const tasks = (columnData.tasks || []).map((task: RawAITaskOutput) => ({
-        title: task.title || 'Unnamed Task',
-        description: task.description || '',
-      }));
+      // Ensure column name is unique
+      let columnName = columnData.name.trim();
+      const existingNames = new Set(
+        existingColumns.map((col) => col.name.toLowerCase())
+      );
 
-      return {
-        name: columnName,
-        tasks,
-      };
+      if (existingNames.has(columnName.toLowerCase())) {
+        let counter = 1;
+        while (existingNames.has(`${columnName} ${counter}`.toLowerCase())) {
+          counter++;
+        }
+        columnName = `${columnName} ${counter}`;
+      }
+
+      return { name: columnName };
     } catch (error) {
       console.error('Error generating column:', error);
-      throw new Error('Failed to generate column');
+      throw new Error(
+        error instanceof Error
+          ? `Failed to generate column: ${error.message}`
+          : 'An unknown error occurred while generating the column'
+      );
     }
   }
 
@@ -164,7 +214,6 @@ export class AIService {
     count?: number
   ): Promise<MultiColumnGenerationResult> {
     try {
-      // Create a summarized board context for the prompt
       const existingColumns = boardContext.columns
         .map((col) => col.name)
         .join(', ');
