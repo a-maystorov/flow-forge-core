@@ -377,6 +377,43 @@ export class AIService {
   }
 
   /**
+   * Checks if a column can be deleted (must be empty)
+   * @param boardContext Complete context of the existing board
+   * @param columnName Name of the column to check for deletion
+   * @returns Object with canDelete flag and reason if not deletable
+   */
+  async deleteColumn(
+    boardContext: BoardContext,
+    columnName: string
+  ): Promise<{ canDelete: boolean; reason?: string }> {
+    try {
+      const column = boardContext.columns.find(
+        (col) => col.name.toLowerCase() === columnName.toLowerCase()
+      );
+
+      if (!column) {
+        throw new Error(`Column "${columnName}" not found`);
+      }
+
+      if (column.tasks && column.tasks.length > 0) {
+        return {
+          canDelete: false,
+          reason: `Cannot delete "${columnName}" because it contains ${column.tasks.length} task(s). Please move or delete the tasks first.`,
+        };
+      }
+
+      return { canDelete: true };
+    } catch (error) {
+      console.error('Error checking column deletion:', error);
+      throw new Error(
+        error instanceof Error
+          ? `Failed to check column deletion: ${error.message}`
+          : 'An unknown error occurred while checking column deletion'
+      );
+    }
+  }
+
+  /**
    * Generate multiple columns at once with tasks for an existing board
    * @param boardContext Complete context of the existing board
    * @param prompt User's request for what columns to generate

@@ -22,6 +22,7 @@ export interface MessageIntent {
     | 'generate_column'
     | 'rename_column'
     | 'move_column'
+    | 'delete_column'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
   taskTitle?: string;
@@ -435,6 +436,60 @@ class ChatService {
           }
           break;
 
+        case 'delete_column':
+          try {
+            if (!intent.currentColumnName) {
+              responseContent = 'Which column would you like to delete?';
+              break;
+            }
+
+            const columnToDelete = boardContext.columns.find(
+              (col) =>
+                col.name.toLowerCase() ===
+                intent.currentColumnName!.toLowerCase()
+            );
+
+            if (!columnToDelete) {
+              responseContent = `I couldn't find a column named "${intent.currentColumnName}". Please check the name and try again.`;
+              break;
+            }
+
+            // Check if we can delete the column (must be empty)
+            const deleteCheck = await AIService.deleteColumn(
+              boardContext,
+              columnToDelete.name
+            );
+
+            if (!deleteCheck.canDelete) {
+              responseContent = `❌ ${deleteCheck.reason || `Cannot delete the "${columnToDelete.name}" column.`}`;
+              break;
+            }
+
+            // If we get here, it's safe to delete the column
+            const updatedColumns = boardContext.columns
+              .filter(
+                (col) =>
+                  col.name.toLowerCase() !== columnToDelete.name.toLowerCase()
+              )
+              .map((col, index) => ({
+                ...col,
+                position: index,
+              }));
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = {
+              ...boardContext,
+              columns: updatedColumns,
+            };
+
+            responseContent = `✅ I've deleted the "${columnToDelete.name}" column. What would you like to do next?`;
+          } catch (error) {
+            console.error('Error deleting column:', error);
+            responseContent =
+              'I had trouble deleting the column. Could you please try again with more details?';
+          }
+          break;
+
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
           responseContent = await AIService.generateGeneralResponse(
@@ -497,7 +552,8 @@ class ChatService {
             4. generate_column - User wants to add a new column to the board
             5. rename_column - User wants to rename an existing column
             6. move_column - User wants to move a column to a different position
-            7. general_conversation - General queries not matching above intents
+            7. delete_column - User wants to delete a column
+            8. general_conversation - General queries not matching above intents
             
             Also extract any relevant context like board name, task title, column name, etc.
             
@@ -508,7 +564,7 @@ class ChatService {
               "taskDescription": "extracted task description if applicable",
               "boardName": "extracted board name if applicable",
               "columnName": "suggested column name if applicable",
-              "currentColumnName": "name of the column to rename or move if applicable"
+              "currentColumnName": "name of the column to rename, move or delete if applicable"
             }`,
           },
           {
