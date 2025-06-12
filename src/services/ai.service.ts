@@ -202,6 +202,97 @@ export class AIService {
   }
 
   /**
+   * Suggest a new name for an existing column
+   * @param boardContext Complete context of the existing board
+   * @param currentColumnName The current name of the column to rename
+   * @param userPrompt Optional user input about the desired name change
+   * @returns The suggested new column name
+   */
+  async renameColumn(
+    boardContext: BoardContext,
+    currentColumnName: string,
+    userPrompt?: string
+  ): Promise<{ name: string }> {
+    try {
+      const existingColumns = boardContext.columns
+        .filter(
+          (col) => col.name.toLowerCase() !== currentColumnName.toLowerCase()
+        )
+        .map((col) => col.name);
+
+      const response = await openai.client.chat.completions.create({
+        model: openai.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are a helpful assistant for a Kanban board application.
+            Your task is to suggest a new name for a column based on the user's request and existing column names.
+            
+            Guidelines for column names:
+            1. Keep it short and descriptive (1-3 words)
+            2. Use title case (e.g., "In Progress")
+            3. Be consistent with existing column naming patterns
+            4. Avoid duplicating existing column names
+            5. Make it clear what stage of the workflow it represents
+            
+            Current column name: ${currentColumnName}
+            Existing columns: ${existingColumns.join(', ') || 'None'}
+            ${userPrompt ? `User's request: ${userPrompt}` : ''}
+            
+            Respond with a JSON object containing:
+            - name: string (required) - The suggested new column name`,
+          },
+          {
+            role: 'user',
+            content:
+              userPrompt ||
+              `Please suggest a better name for the column "${currentColumnName}"`,
+          },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 50,
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('No content in AI response');
+      }
+
+      const columnData = JSON.parse(content) as { name: string };
+
+      if (!columnData.name || typeof columnData.name !== 'string') {
+        throw new Error(
+          'Invalid response format from AI: missing or invalid name'
+        );
+      }
+
+      // Ensure the new name is unique
+      let newName = columnData.name.trim();
+      const existingNames = new Set(
+        existingColumns.map((name) => name.toLowerCase())
+      );
+
+      if (existingNames.has(newName.toLowerCase())) {
+        let counter = 1;
+        while (existingNames.has(`${newName} ${counter}`.toLowerCase())) {
+          counter++;
+        }
+        newName = `${newName} ${counter}`;
+      }
+
+      return { name: newName };
+    } catch (error) {
+      console.error('Error renaming column:', error);
+      throw new Error(
+        error instanceof Error
+          ? `Failed to rename column: ${error.message}`
+          : 'An unknown error occurred while renaming the column'
+      );
+    }
+  }
+
+  /**
    * Generate multiple columns at once with tasks for an existing board
    * @param boardContext Complete context of the existing board
    * @param prompt User's request for what columns to generate

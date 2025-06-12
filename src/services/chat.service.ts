@@ -14,17 +14,19 @@ import BoardContextService from './board-context.service';
 /**
  * Interface for message intent results
  */
-interface MessageIntent {
+export interface MessageIntent {
   action:
     | 'generate_board'
     | 'improve_task'
     | 'break_down_task'
     | 'generate_column'
+    | 'rename_column'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
   taskTitle?: string;
   taskDescription?: string;
   columnName?: string;
+  currentColumnName?: string;
 }
 
 /**
@@ -322,6 +324,48 @@ class ChatService {
           }
           break;
 
+        case 'rename_column':
+          try {
+            if (!intent.currentColumnName) {
+              responseContent = 'Which column would you like to rename?';
+              break;
+            }
+
+            const columnToRename = boardContext.columns.find(
+              (col) =>
+                col.name.toLowerCase() ===
+                intent.currentColumnName!.toLowerCase()
+            );
+
+            if (!columnToRename) {
+              responseContent = `I couldn't find a column named "${intent.currentColumnName}". Please check the name and try again.`;
+              break;
+            }
+
+            const renameResult = await AIService.renameColumn(
+              boardContext,
+              columnToRename.name,
+              userMessage
+            );
+
+            const updatedColumns = boardContext.columns.map((col) =>
+              col.name === columnToRename.name
+                ? { ...col, name: renameResult.name }
+                : col
+            );
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            actionResult = renameResult;
+            responseContent = `✅ I've renamed the column from "${columnToRename.name}" to "${renameResult.name}". What would you like to do next?`;
+          } catch (error) {
+            console.error('Error renaming column:', error);
+            responseContent =
+              'I had trouble renaming the column. Could you please try again with more details?';
+          }
+          break;
+
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
           responseContent = await AIService.generateGeneralResponse(
@@ -382,7 +426,8 @@ class ChatService {
             2. improve_task - User wants to improve a task description
             3. break_down_task - User wants to break down a task into subtasks
             4. generate_column - User wants to add a new column to the board
-            5. general_conversation - General queries not matching above intents
+            5. rename_column - User wants to rename an existing column
+            6. general_conversation - General queries not matching above intents
             
             Also extract any relevant context like board name, task title, column name, etc.
             
@@ -392,7 +437,8 @@ class ChatService {
               "taskTitle": "extracted task title if applicable",
               "taskDescription": "extracted task description if applicable",
               "boardName": "extracted board name if applicable",
-              "columnName": "suggested column name if applicable"
+              "columnName": "suggested column name if applicable",
+              "currentColumnName": "name of the column to rename if applicable"
             }`,
           },
           {
@@ -417,6 +463,7 @@ class ChatService {
           | 'improve_task'
           | 'break_down_task'
           | 'generate_column'
+          | 'rename_column'
           | 'general_conversation',
         userId,
       };
@@ -427,6 +474,14 @@ class ChatService {
 
       if (classification.taskDescription) {
         intent.taskDescription = classification.taskDescription;
+      }
+
+      if (classification.columnName) {
+        intent.columnName = classification.columnName;
+      }
+
+      if (classification.currentColumnName) {
+        intent.currentColumnName = classification.currentColumnName;
       }
 
       return intent;
