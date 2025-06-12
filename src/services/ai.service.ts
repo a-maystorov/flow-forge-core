@@ -306,7 +306,7 @@ export class AIService {
   /**
    * Improve a task description based on user prompt and board context
    */
-  async improveTaskDescription(
+  async improveTask(
     userPrompt: string,
     boardContext: BoardContext,
     chatContext: ChatContext
@@ -454,7 +454,7 @@ export class AIService {
    * Improve a subtask description based on user prompt
    * Optionally uses parent task and board context if provided
    */
-  async improveSubtaskDescription(
+  async improveSubtask(
     subtaskTitle: string,
     subtaskDescription: string,
     prompt: string,

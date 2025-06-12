@@ -168,7 +168,7 @@ class ChatService {
       switch (intent.action) {
         case 'generate_board':
           if (intent.userId) {
-            const newBoard = await this.handleBoardGeneration(
+            const newBoard = await AIService.generateBoardSuggestion(
               userMessage,
               intent.userId,
               chatContext
@@ -218,7 +218,7 @@ class ChatService {
 
         case 'improve_task':
           try {
-            const improvementResult = await AIService.improveTaskDescription(
+            const improvementResult = await AIService.improveTask(
               userMessage,
               boardContext,
               chatContext
@@ -254,7 +254,7 @@ class ChatService {
 
         case 'break_down_task':
           if (intent.taskTitle && intent.taskDescription) {
-            const subtasksResult = await this.handleTaskBreakdown(
+            const subtasksResult = await AIService.breakdownTaskIntoSubtasks(
               intent.taskTitle,
               intent.taskDescription,
               userMessage,
@@ -401,66 +401,6 @@ class ChatService {
         userId,
       };
     }
-  }
-
-  /**
-   * Handle the generation of a new board
-   * @param userMessage - The user's message/prompt
-   * @param userId - The ID of the user
-   * @param chatContext - The chat context for the user
-   * @returns The generated board
-   */
-  private async handleBoardGeneration(
-    userMessage: string,
-    userId: mongoose.Types.ObjectId,
-    chatContext: ChatContext
-  ) {
-    return await AIService.generateBoardSuggestion(
-      userMessage,
-      userId,
-      chatContext
-    );
-  }
-
-  /**
-   * Handle improving a task description
-   * @param userRequest - The user's request for improvement
-   * @param boardContext - The current board context
-   * @param chatContext - The chat context for the user
-   * @returns The improved task details with position information
-   */
-  private async handleTaskImprovement(
-    userRequest: string,
-    boardContext: BoardContext,
-    chatContext: ChatContext
-  ) {
-    return await AIService.improveTaskDescription(
-      userRequest,
-      boardContext,
-      chatContext
-    );
-  }
-
-  /**
-   * Handle breaking down a task into subtasks
-   * @param taskTitle - The title of the task to break down
-   * @param taskDescription - The description of the task to break down
-   * @param userRequest - The user's request for breaking down the task
-   * @param chatContext - The chat context for the user
-   * @returns The generated subtasks
-   */
-  private async handleTaskBreakdown(
-    taskTitle: string,
-    taskDescription: string,
-    userRequest: string,
-    chatContext: ChatContext
-  ) {
-    return await AIService.breakdownTaskIntoSubtasks(
-      taskTitle,
-      taskDescription,
-      userRequest,
-      chatContext
-    );
   }
 
   /**
