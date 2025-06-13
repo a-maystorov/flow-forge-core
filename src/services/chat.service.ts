@@ -25,6 +25,7 @@ export interface MessageIntent {
     | 'rename_column'
     | 'move_column'
     | 'delete_column'
+    | 'generate_task'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
   taskTitle?: string;
@@ -166,6 +167,7 @@ class ChatService {
         | { name: string }
         | { newPosition: number }
         | { columns: Array<{ name: string; tasks: PreviewTask[] }> }
+        | PreviewTask
         | null = null;
 
       let isBoardContextUpdated = false;
@@ -532,6 +534,55 @@ class ChatService {
           }
           break;
 
+        case 'generate_task':
+          try {
+            const newTask = await AIService.generateTask(
+              boardContext,
+              userMessage,
+              chatContext
+            );
+
+            // Find the target column (BACKLOG > TODO > first column)
+            let targetColumn = boardContext.columns.find((col) =>
+              col.name.trim().toUpperCase().includes('BACKLOG')
+            );
+
+            if (!targetColumn) {
+              targetColumn = boardContext.columns.find((col) =>
+                col.name.trim().toUpperCase().includes('TODO')
+              );
+            }
+
+            if (!targetColumn && boardContext.columns.length > 0) {
+              targetColumn = boardContext.columns[0];
+            }
+
+            if (!targetColumn) {
+              throw new Error('No columns available to add the task');
+            }
+
+            const updatedColumns = boardContext.columns.map((col) => {
+              if (col.name === targetColumn!.name) {
+                return {
+                  ...col,
+                  tasks: [...(col.tasks || []), newTask],
+                };
+              }
+              return col;
+            });
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            actionResult = newTask;
+            responseContent = `✅ I've created a new task: "${newTask.title}" in the "${targetColumn.name}" column.`;
+          } catch (error) {
+            console.error('Error generating task:', error);
+            responseContent =
+              'I had trouble creating a new task. Could you please try again with more details?';
+          }
+          break;
+
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
           responseContent = await AIService.generateGeneralResponse(
@@ -596,7 +647,8 @@ class ChatService {
             6. rename_column - User wants to rename an existing column
             7. move_column - User wants to move a column to a different position
             8. delete_column - User wants to delete a column
-            9. general_conversation - General queries not matching above intents
+            9. generate_task - User wants to create a new task (e.g., "Add a task to fix the login bug")
+            10. general_conversation - General queries not matching above intents
             
             Also extract any relevant context like board name, task title, column name, etc.
             
@@ -626,6 +678,7 @@ class ChatService {
       const classification = JSON.parse(content);
 
       // Map the classification to our MessageIntent interface
+      // The LLM returns an intent type and optional context fields
       const intent: MessageIntent = {
         action: (classification.intent || 'general_conversation') as
           | 'generate_board'
@@ -636,24 +689,27 @@ class ChatService {
           | 'rename_column'
           | 'move_column'
           | 'delete_column'
+          | 'generate_task'
           | 'general_conversation',
         userId,
       };
 
+      // Extract optional context fields that the LLM might have identified
+      // These fields provide additional details about the user's intent
       if (classification.taskTitle) {
-        intent.taskTitle = classification.taskTitle;
+        intent.taskTitle = classification.taskTitle; // e.g., "login form" in "Improve the login form"
       }
 
       if (classification.taskDescription) {
-        intent.taskDescription = classification.taskDescription;
+        intent.taskDescription = classification.taskDescription; // Detailed description of the task
       }
 
       if (classification.columnName) {
-        intent.columnName = classification.columnName;
+        intent.columnName = classification.columnName; // Target column for the action
       }
 
       if (classification.currentColumnName) {
-        intent.currentColumnName = classification.currentColumnName;
+        intent.currentColumnName = classification.currentColumnName; // Original column name for move/rename operations
       }
 
       return intent;

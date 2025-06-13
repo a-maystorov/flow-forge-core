@@ -525,41 +525,80 @@ export class AIService {
   }
 
   /**
-   * Generate a single task for an existing column with full board context
+   * Generate a single task with automatic column selection
+   * The task will be placed in the first available column in this priority: BACKLOG > TODO > First column
    */
   async generateTask(
     boardContext: BoardContext,
-    columnName: string,
     prompt: string,
     chatContext: ChatContext
   ): Promise<PreviewTask> {
     try {
-      const targetColumn = boardContext.columns.find(
-        (col) => col.name === columnName
+      const backlogCol = boardContext.columns.find((col) =>
+        col.name.trim().toUpperCase().includes('BACKLOG')
       );
 
-      const columnTasks = targetColumn
-        ? targetColumn.tasks.map((t) => t.title).join(', ')
-        : 'No existing tasks';
+      const todoCol = boardContext.columns.find(
+        (col) =>
+          !col.name.trim().toUpperCase().includes('BACKLOG') &&
+          col.name.trim().toUpperCase().includes('TODO')
+      );
 
-      const boardSummary = JSON.stringify({
-        boardName: boardContext.name,
-        boardDescription: boardContext.description,
-        columnName,
-        existingTasks: columnTasks,
-      });
+      const targetColumn = backlogCol || todoCol || boardContext.columns[0];
+
+      if (!targetColumn) {
+        throw new Error('No columns available in the board');
+      }
+
+      const columnContext = boardContext.columns.map((col) => ({
+        name: col.name,
+        taskCount: col.tasks?.length || 0,
+        taskExamples: col.tasks?.slice(0, 3).map((t) => t.title) || [],
+      }));
 
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           {
             role: 'system',
-            content: `You are an AI assistant for a Kanban board application called Flow Forge. 
-            A user has the following context: ${boardSummary}
-            Your task is to generate a single task that fits well with the existing tasks in the column.
-            The response should be a valid JSON object representing a task with 'title', 'description', and 'status' (Todo, Doing, or Done) fields.
-            The task should have an array of 'subtasks' with 'title' and 'description'.
-            Create subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.`,
+            content: `You are an AI assistant for a Kanban board application called Flow Forge.
+            
+            ## Board Context ##
+            - Board: ${boardContext.name || 'Untitled Board'}
+            ${boardContext.description ? `- Description: ${boardContext.description}` : ''}
+            
+            ## Workflow Columns ##
+            ${columnContext
+              .map(
+                (col) =>
+                  `- ${col.name} (${col.taskCount} tasks)${
+                    col.taskExamples.length > 0
+                      ? `\n  Example tasks: ${col.taskExamples.join(', ')}`
+                      : ''
+                  }`
+              )
+              .join('\n')}
+            
+            ## Your Task ##
+            Generate a single, well-defined task that fits naturally into the '${targetColumn.name}' column.
+            
+            ## Guidelines ##
+            1. Task Title:
+               - Clear and concise (5-10 words)
+               - Start with a verb (e.g., "Implement", "Design", "Review")
+               - Be specific and actionable
+            
+            2. Task Description:
+               - Provide enough detail for clear understanding
+               - Include acceptance criteria if applicable
+               - Keep it concise but informative
+            
+            ## Response Format ##
+            Return a JSON object with:
+            {
+              "title": "Task title here",
+              "description": "Detailed description here"
+            }`,
           },
           {
             role: 'user',
