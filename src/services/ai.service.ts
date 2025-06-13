@@ -810,49 +810,28 @@ export class AIService {
   }
 
   /**
-   * Generate multiple tasks at once for a specific column
-   * @param boardContext Complete context of the existing board
-   * @param columnName Name of the column to generate tasks for
-   * @param prompt User's request for what tasks to generate
+   * Break down a task into subtasks
    */
-  async generateMultipleTasks(
-    boardContext: BoardContext,
-    columnName: string,
+  async breakdownTaskIntoSubtasks(
+    taskTitle: string,
+    taskDescription: string,
     prompt: string,
     chatContext: ChatContext
-  ): Promise<PreviewTask[]> {
+  ): Promise<PreviewSubtask[]> {
     try {
-      const targetColumn = boardContext.columns.find(
-        (col) => col.name === columnName
-      );
-      const columnTasks = targetColumn
-        ? targetColumn.tasks.map((t) => t.title).join(', ')
-        : 'No existing tasks';
-
-      const columnSummary = JSON.stringify({
-        boardName: boardContext.name,
-        boardDescription: boardContext.description,
-        columnName: columnName,
-        existingTasks: columnTasks,
-      });
-
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           {
             role: 'system',
-            content: `You are an AI assistant for a Kanban board application called Flow Forge. 
-            A user has the following context: ${columnSummary}
-            Your task is to generate multiple tasks that fit well with the existing column.
-            The response should be a valid JSON object with a 'tasks' array.
-            Each task should have a 'title', 'description', and 'priority' (low, medium, or high) fields.
-            Tasks should be relevant to the column and board context.
-            Add subtasks only if the task is very complex and requires breaking it down into smaller steps or the user requests it.
-            `,
+            content: `You are an AI assistant for a Kanban board application.
+              Your task is to break down a task into smaller subtasks based on the task title, description, and user request.
+              The response should be a valid JSON object containing a 'subtasks' array.
+              Each subtask in the array should have 'title', 'description', and 'priority' (low, medium, or high) fields.`,
           },
           {
             role: 'user',
-            content: prompt,
+            content: `Parent Task Title: ${taskTitle}\nParent Task Description: ${taskDescription}\nUser Prompt: ${prompt}`,
           },
           ...chatContext,
         ],
@@ -863,24 +842,11 @@ export class AIService {
       if (!content) {
         throw new Error('OpenAI response content is null');
       }
-
-      const result = JSON.parse(content) as { tasks?: RawAITaskOutput[] };
-
-      if (!result.tasks || !Array.isArray(result.tasks)) {
-        throw new Error('Invalid response format: missing tasks array');
-      }
-
-      // Process each task
-      const tasks = result.tasks.map((taskData) => ({
-        title: taskData.title || 'Unnamed Task',
-        description: taskData.description || '',
-        status: 'Todo',
-      }));
-
-      return tasks;
+      const subtasksData = JSON.parse(content) as RawAISubtaskBreakdownOutput;
+      return this.formatSubtasksResponse(subtasksData.subtasks || []);
     } catch (error) {
-      console.error('Error generating multiple tasks:', error);
-      throw new Error('Failed to generate tasks');
+      console.error('Error breaking down task:', error);
+      throw new Error('Failed to break down task into subtasks');
     }
   }
 
@@ -941,47 +907,6 @@ export class AIService {
     } catch (error) {
       console.error('Error improving subtask description:', error);
       throw new Error('Failed to improve subtask description');
-    }
-  }
-
-  /**
-   * Break down a task into subtasks
-   */
-  async breakdownTaskIntoSubtasks(
-    taskTitle: string,
-    taskDescription: string,
-    prompt: string,
-    chatContext: ChatContext
-  ): Promise<PreviewSubtask[]> {
-    try {
-      const response = await openai.client.chat.completions.create({
-        model: openai.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are an AI assistant for a Kanban board application.
-            Your task is to break down a task into smaller subtasks based on the task title, description, and user request.
-            The response should be a valid JSON object containing a 'subtasks' array.
-            Each subtask in the array should have 'title', 'description', and 'priority' (low, medium, or high) fields.`,
-          },
-          {
-            role: 'user',
-            content: `Parent Task Title: ${taskTitle}\nParent Task Description: ${taskDescription}\nUser Prompt: ${prompt}`,
-          },
-          ...chatContext,
-        ],
-        response_format: { type: 'json_object' },
-      });
-
-      const content = response.choices[0].message.content;
-      if (!content) {
-        throw new Error('OpenAI response content is null');
-      }
-      const subtasksData = JSON.parse(content) as RawAISubtaskBreakdownOutput;
-      return this.formatSubtasksResponse(subtasksData.subtasks || []);
-    } catch (error) {
-      console.error('Error breaking down task:', error);
-      throw new Error('Failed to break down task into subtasks');
     }
   }
 
