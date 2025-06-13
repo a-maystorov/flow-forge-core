@@ -24,6 +24,7 @@ export interface MessageIntent {
     | 'generate_multiple_columns'
     | 'rename_column'
     | 'move_column'
+    | 'move_task'
     | 'delete_column'
     | 'generate_task'
     | 'general_conversation';
@@ -168,6 +169,11 @@ class ChatService {
         | { newPosition: number }
         | { columns: Array<{ name: string; tasks: PreviewTask[] }> }
         | PreviewTask
+        | {
+            taskTitle: string;
+            sourceColumnName: string;
+            targetColumnName: string;
+          }
         | null = null;
 
       let isBoardContextUpdated = false;
@@ -583,6 +589,97 @@ class ChatService {
           }
           break;
 
+        case 'move_task':
+          try {
+            if (!intent.taskTitle) {
+              responseContent = 'Which task would you like to move?';
+              break;
+            }
+
+            if (!intent.columnName) {
+              responseContent =
+                'Which column would you like to move the task to?';
+              break;
+            }
+
+            let sourceColumn:
+              | { name: string; tasks: PreviewTask[] }
+              | undefined;
+            let taskToMove: PreviewTask | undefined;
+
+            for (const column of boardContext.columns) {
+              const task = column.tasks.find(
+                (t) => t.title.toLowerCase() === intent.taskTitle!.toLowerCase()
+              );
+              if (task) {
+                sourceColumn = column;
+                taskToMove = task;
+                break;
+              }
+            }
+
+            if (!sourceColumn || !taskToMove) {
+              responseContent = `I couldn't find a task named "${intent.taskTitle}" in any column.`;
+              break;
+            }
+
+            const targetColumn = boardContext.columns.find(
+              (col) =>
+                col.name.toLowerCase() === intent.columnName!.toLowerCase()
+            );
+
+            if (!targetColumn) {
+              responseContent = `I couldn't find a column named "${intent.columnName}".`;
+              break;
+            }
+
+            if (sourceColumn.name === targetColumn.name) {
+              responseContent = `The task "${taskToMove.title}" is already in the "${targetColumn.name}" column.`;
+              break;
+            }
+            const taskToMoveDefined = taskToMove!;
+
+            const moveResult = await AIService.moveTask(
+              boardContext,
+              taskToMoveDefined.title,
+              targetColumn.name,
+              userMessage
+            );
+
+            const updatedColumns = boardContext.columns.map((col) => {
+              if (col.name === sourceColumn!.name) {
+                return {
+                  ...col,
+                  tasks: col.tasks.filter(
+                    (t) => t.title !== taskToMoveDefined.title
+                  ),
+                };
+              }
+
+              if (col.name === targetColumn.name) {
+                return {
+                  ...col,
+                  tasks: [...col.tasks, taskToMoveDefined],
+                };
+              }
+              return col;
+            });
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            actionResult = moveResult;
+
+            responseContent = `✅ I've moved the task "${moveResult.taskTitle}" from "${moveResult.sourceColumnName}" to "${moveResult.targetColumnName}".`;
+          } catch (error) {
+            console.error('Error moving task:', error);
+            responseContent =
+              error instanceof Error
+                ? `I couldn't move that task: ${error.message}`
+                : 'An error occurred while trying to move the task. Please try again.';
+          }
+          break;
+
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
           responseContent = await AIService.generateGeneralResponse(
@@ -646,9 +743,10 @@ class ChatService {
             5. generate_multiple_columns - User wants to add multiple new columns to the board
             6. rename_column - User wants to rename an existing column
             7. move_column - User wants to move a column to a different position
-            8. delete_column - User wants to delete a column
-            9. generate_task - User wants to create a new task (e.g., "Add a task to fix the login bug")
-            10. general_conversation - General queries not matching above intents
+            8. move_task - User wants to move a task to a different column (e.g., "Move 'Fix login' to 'In Progress'")
+            9. delete_column - User wants to delete a column
+            10. generate_task - User wants to create a new task (e.g., "Add a task to fix the login bug")
+            11. general_conversation - General queries not matching above intents
             
             Also extract any relevant context like board name, task title, column name, etc.
             
@@ -690,6 +788,7 @@ class ChatService {
           | 'move_column'
           | 'delete_column'
           | 'generate_task'
+          | 'move_task'
           | 'general_conversation',
         userId,
       };

@@ -627,6 +627,117 @@ export class AIService {
   }
 
   /**
+   * Move a task from one column to another based on the user's request
+   * @param boardContext Complete context of the existing board
+   * @param taskTitle Title of the task to move
+   * @param targetColumnName Name of the target column
+   * @param userPrompt Optional user input about the desired move
+   * @returns Object containing source and target column names and task title
+   */
+  async moveTask(
+    boardContext: BoardContext,
+    taskTitle: string,
+    targetColumnName: string,
+    userPrompt?: string
+  ): Promise<{
+    taskTitle: string;
+    sourceColumnName: string;
+    targetColumnName: string;
+  }> {
+    try {
+      let sourceColumn: { name: string; tasks: PreviewTask[] } | undefined;
+      let task: PreviewTask | undefined;
+
+      for (const column of boardContext.columns) {
+        const foundIndex = (column.tasks || []).findIndex(
+          (t) => t.title.toLowerCase() === taskTitle.toLowerCase()
+        );
+        if (foundIndex !== -1) {
+          sourceColumn = column;
+          task = column.tasks[foundIndex];
+          break;
+        }
+      }
+
+      if (!task || !sourceColumn) {
+        throw new Error(`Task "${taskTitle}" not found in any column`);
+      }
+
+      const targetColumn = boardContext.columns.find(
+        (col) => col.name.toLowerCase() === targetColumnName.toLowerCase()
+      );
+
+      if (!targetColumn) {
+        throw new Error(`Target column "${targetColumnName}" not found`);
+      }
+
+      if (sourceColumn.name === targetColumn.name) {
+        throw new Error('Task is already in the target column');
+      }
+
+      if (userPrompt) {
+        const response = await openai.client.chat.completions.create({
+          model: openai.model,
+          messages: [
+            {
+              role: 'system',
+              content: `You are a helpful assistant for a Kanban board application.
+                Your task is to determine if moving a task between columns makes sense based on the user's request.
+                
+                Current board columns:
+                ${boardContext.columns.map((col) => `- ${col.name}`).join('\n')}
+                
+                Task to move: "${taskTitle}"
+                Current column: "${sourceColumn.name}"
+                Target column: "${targetColumn.name}"
+                
+                User's reasoning: ${userPrompt}
+                
+                Respond with a JSON object containing:
+                - shouldMove: boolean (whether the move makes sense)
+                - reason: string (brief explanation of your reasoning)`,
+            },
+            {
+              role: 'user',
+              content: `Should I move the task "${taskTitle}" from "${sourceColumn.name}" to "${targetColumn.name}"? ${userPrompt}`,
+            },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.3,
+        });
+
+        const content = response.choices[0].message.content;
+        if (content) {
+          const result = JSON.parse(content) as {
+            shouldMove: boolean;
+            reason?: string;
+          };
+
+          if (!result.shouldMove) {
+            throw new Error(
+              result.reason ||
+                'This move might not be appropriate based on the current workflow'
+            );
+          }
+        }
+      }
+
+      return {
+        taskTitle: task.title,
+        sourceColumnName: sourceColumn.name,
+        targetColumnName: targetColumn.name,
+      };
+    } catch (error) {
+      console.error('Error moving task:', error);
+      throw new Error(
+        error instanceof Error
+          ? `Failed to move task: ${error.message}`
+          : 'An unknown error occurred while moving the task'
+      );
+    }
+  }
+
+  /**
    * Improve a task description based on user prompt and board context
    */
   async improveTask(
