@@ -1046,45 +1046,69 @@ export class AIService {
   /**
    * Generate a friendly and helpful response for general conversation
    * @param message - The user's message
-   * @param chatContext - Optional array of previous messages for context
+   * @param chatContext - Array of previous messages for context
+   * @param boardContext - Board context for additional context
    * @returns A natural language response
    */
   async generateGeneralResponse(
     message: string,
-    chatContext: ChatContext
+    chatContext: ChatContext,
+    boardContext: BoardContext
   ): Promise<string> {
     try {
+      let boardSummary = 'No active board context';
+
+      if (boardContext) {
+        boardSummary =
+          `Current Board: ${boardContext.name || 'Untitled Board'}\n` +
+          `Columns: ${boardContext.columns?.map((col) => `\n- ${col.name} (${col.tasks?.length || 0} tasks)`).join('') || 'None'}`;
+      }
+
+      const systemMessage = `You are the Flow Forge assistant, here to help users manage their Kanban boards and tasks.
+
+          AVAILABLE CAPABILITIES:
+          1. Board Management:
+          - Create new Kanban boards from scratch
+          - Generate new columns based on workflow needs
+          - Rename, reorder, or delete columns
+          - Analyze and optimize board structure
+
+          2. Task Management:
+          - Create new tasks with descriptions
+          - Move tasks between columns
+          - Generate multiple related tasks at once
+          - Improve and refine task descriptions
+          - Break down complex tasks into subtasks
+          - Improve existing subtask descriptions
+
+          3. Workflow Analysis:
+          - Suggest workflow improvements
+          - Identify bottlenecks in current setup
+          - Recommend task prioritization
+          - Provide productivity tips
+
+          CURRENT CONTEXT:
+          ${boardSummary}
+
+          INSTRUCTIONS:
+          - Be proactive in suggesting relevant actions based on the current board state
+          - When referencing tasks or columns, use their exact names from the context
+          - Keep responses concise but helpful (2-4 sentences typically)
+          - Use markdown for better readability (e.g., **bold** for emphasis, \`code\` for names)
+          - If the user's request is ambiguous, ask clarifying questions
+          - Maintain a friendly, professional, and encouraging tone
+          - Use emojis occasionally but sparingly for emphasis`;
+
+      const userMessageWithContext = boardContext
+        ? `Here's the current state of my board:\n${boardSummary}\n\n${message}`
+        : message;
+
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
-          {
-            role: 'system',
-            content: `You are the Flow Forge assistant, here to help users manage their projects and tasks. 
-            
-            Your primary capabilities include:
-            - Creating and managing Kanban boards
-            - Improving and refining task descriptions
-            - Breaking down tasks into subtasks
-            - Providing workflow and productivity guidance
-            - Assisting with project planning and organization
-            
-            Your personality is:
-            - Warm, encouraging, and professional
-            - Concise in responses (1-3 sentences usually)
-            - Proactive in suggesting next steps
-            - Knowledgeable about project management best practices
-            
-            Guidelines:
-            - Keep responses clear and focused on productivity
-            - Use emojis occasionally but sparingly
-            - Always maintain a helpful and professional tone
-            - If unsure about something, ask for clarification`,
-          },
+          { role: 'system', content: systemMessage },
           ...chatContext,
-          {
-            role: 'user',
-            content: message,
-          },
+          { role: 'user', content: userMessageWithContext },
         ],
         temperature: 0.7,
         max_tokens: 150,

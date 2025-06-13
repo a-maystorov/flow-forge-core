@@ -158,7 +158,12 @@ class ChatService {
 
       const chatContext = await this.getChatContext(chatObjectId);
 
-      const intent = await this.determineMessageIntent(userMessage, userId);
+      const intent = await this.determineMessageIntent(
+        userMessage,
+        userId,
+        chatContext,
+        boardContext
+      );
 
       let responseContent = '';
       let actionResult:
@@ -682,9 +687,11 @@ class ChatService {
 
         default: {
           const chatContext = await this.getChatContext(chatObjectId);
+
           responseContent = await AIService.generateGeneralResponse(
             userMessage,
-            chatContext
+            chatContext,
+            boardContext
           );
 
           if (
@@ -726,46 +733,62 @@ class ChatService {
    */
   private async determineMessageIntent(
     message: string,
-    userId: mongoose.Types.ObjectId
+    userId: mongoose.Types.ObjectId,
+    chatContext: ChatContext,
+    boardContext: BoardContext
   ): Promise<MessageIntent> {
     try {
+      // Prepare board context summary
+      const boardSummary = {
+        columns: boardContext.columns.map((col) => ({
+          name: col.name,
+          taskCount: col.tasks.length,
+        })),
+      };
+
+      const systemPrompt = {
+        role: 'system' as const,
+        content: `You are an intent classifier for a Kanban board application called Flow Forge.
+        Current board state:
+        ${JSON.stringify(boardSummary, null, 2)}
+
+        Analyze the conversation and the user's latest message to determine the intent.
+        
+        Available intents:
+        - generate_board: Create a new board
+        - improve_task: Improve a task description
+        - break_down_task: Break down a task into subtasks
+        - generate_column: Add a new column
+        - generate_multiple_columns: Add multiple columns
+        - rename_column: Rename an existing column
+        - move_column: Move a column to a different position
+        - move_task: Move a task to a different column
+        - delete_column: Delete a column
+        - generate_task: Create a new task
+        - general_conversation: General queries
+        
+        Pay attention to the conversation context to handle follow-up messages.
+        For example, if the assistant just asked "Which task?" the next message is likely the task name.
+        
+        Respond with a JSON object containing:
+        - intent: one of the intent names above
+        - taskTitle: extracted task title if applicable
+        - taskDescription: extracted task description if applicable
+        - columnName: suggested column name if applicable
+        - currentColumnName: name of the column to rename/move/delete if applicable`,
+      };
+
+      const messages = [
+        systemPrompt,
+        ...chatContext,
+        { role: 'user' as const, content: message },
+      ];
+
       const response = await openai.client.chat.completions.create({
         model: openai.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are an intent classifier for a Kanban board application called Flow Forge.
-            Analyze the user's message and classify it into exactly one of these intents:
-            1. generate_board - User wants to create a new board
-            2. improve_task - User wants to improve a task description
-            3. break_down_task - User wants to break down a task into subtasks
-            4. generate_column - User wants to add a new column to the board
-            5. generate_multiple_columns - User wants to add multiple new columns to the board
-            6. rename_column - User wants to rename an existing column
-            7. move_column - User wants to move a column to a different position
-            8. move_task - User wants to move a task to a different column (e.g., "Move 'Fix login' to 'In Progress'")
-            9. delete_column - User wants to delete a column
-            10. generate_task - User wants to create a new task (e.g., "Add a task to fix the login bug")
-            11. general_conversation - General queries not matching above intents
-            
-            Also extract any relevant context like board name, task title, column name, etc.
-            
-            Respond with a valid JSON object containing:
-            {
-              "intent": "one_of_the_above_intents",
-              "taskTitle": "extracted task title if applicable",
-              "taskDescription": "extracted task description if applicable",
-              "boardName": "extracted board name if applicable",
-              "columnName": "suggested column name if applicable",
-              "currentColumnName": "name of the column to rename, move or delete if applicable"
-            }`,
-          },
-          {
-            role: 'user',
-            content: message,
-          },
-        ],
+        messages,
         response_format: { type: 'json_object' },
+        temperature: 0.3,
       });
 
       const content = response.choices[0].message.content;
