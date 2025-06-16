@@ -12,7 +12,7 @@ import {
   // RawAISubtaskBreakdownOutput,
   RawAISubtaskOutput,
   RawAITaskOutput,
-  TaskContext,
+  // TaskContext,
 } from '../types/ai.types';
 
 export class AIService {
@@ -951,43 +951,48 @@ export class AIService {
       throw new Error('Failed to break down task into subtasks');
     }
   }
-
   /**
-   * Improve a subtask description based on user prompt
-   * Optionally uses parent task and board context if provided
+   * Improve a subtask description based on user prompt.
+   * Uses full board, task, and subtask context to determine what to improve.
+   * Only updates the subtask title if the user explicitly asks for it.
    */
   async improveSubtask(
-    subtaskTitle: string,
-    subtaskDescription: string,
+    boardContext: BoardContext, // full board with columns, tasks, and subtasks
     prompt: string,
-    chatContext: ChatContext,
-    parentTask?: TaskContext
-  ): Promise<{ title: string; description: string }> {
+    chatContext: ChatContext
+  ): Promise<{
+    columnIndex: number;
+    taskIndex: number;
+    subtaskIndex: number;
+    title: string;
+    description: string;
+  }> {
     try {
-      // Create context string if parent task is provided
-      const contextString = parentTask
-        ? `This subtask belongs to the parent task with the following details: ${JSON.stringify(
-            {
-              title: parentTask.title,
-              description: parentTask.description,
-              subtaskCount: parentTask.subtasks?.length || 0,
-            }
-          )}`
-        : '';
-
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           {
             role: 'system',
             content: `You are an AI assistant for a Kanban board application.
-            Your task is to improve the title and description of a subtask based on the user's request.
-            ${contextString}
-            The response should be a valid JSON object with 'title' and 'description' fields.`,
+              The current board has the following context:
+              ${JSON.stringify(boardContext, null, 2)}
+
+              Your task is to:
+              1. Identify which subtask the user wants to improve based on their prompt.
+              2. Improve the subtask description based on the user's intent.
+              3. Only modify the title if the user explicitly mentions wanting a title change — otherwise, leave the title exactly as is.
+              4. Return the indices of the column, task, and subtask along with the improved content.
+
+              The response should be a valid JSON object with:
+              - columnIndex: number
+              - taskIndex: number
+              - subtaskIndex: number
+              - title: string (subtask title — only changed if clearly requested)
+              - description: string (updated based on the user prompt)`,
           },
           {
             role: 'user',
-            content: `Current Subtask Title: ${subtaskTitle}\nCurrent Subtask Description: ${subtaskDescription}\nUser Prompt: ${prompt}`,
+            content: prompt,
           },
           ...chatContext,
         ],
@@ -998,13 +1003,29 @@ export class AIService {
       if (!content) {
         throw new Error('OpenAI response content is null');
       }
-      const improvedSubtask = JSON.parse(content) as {
+
+      const result = JSON.parse(content) as {
+        columnIndex: number;
+        taskIndex: number;
+        subtaskIndex: number;
         title?: string;
         description?: string;
       };
+
+      const originalSubtask =
+        boardContext.columns[result.columnIndex]?.tasks[result.taskIndex]
+          ?.subtasks?.[result.subtaskIndex];
+
+      if (!originalSubtask) {
+        throw new Error('Subtask not found in provided context.');
+      }
+
       return {
-        title: improvedSubtask.title || subtaskTitle,
-        description: improvedSubtask.description || subtaskDescription,
+        columnIndex: result.columnIndex,
+        taskIndex: result.taskIndex,
+        subtaskIndex: result.subtaskIndex,
+        title: result.title ?? originalSubtask.title,
+        description: result.description ?? originalSubtask.description ?? '',
       };
     } catch (error) {
       console.error('Error improving subtask description:', error);

@@ -19,6 +19,7 @@ export interface MessageIntent {
   action:
     | 'generate_board'
     | 'improve_task'
+    | 'improve_subtask'
     | 'break_down_task'
     | 'generate_column'
     | 'generate_multiple_columns'
@@ -545,6 +546,39 @@ class ChatService {
           }
           break;
 
+        case 'improve_subtask':
+          try {
+            const { columnIndex, taskIndex, subtaskIndex, title, description } =
+              await AIService.improveSubtask(
+                boardContext,
+                userMessage,
+                chatContext
+              );
+
+            const updatedColumns = [...boardContext.columns];
+            const task = updatedColumns[columnIndex].tasks[taskIndex];
+
+            if (!task.subtasks) {
+              task.subtasks = [];
+            }
+
+            task.subtasks[subtaskIndex] = {
+              ...task.subtasks[subtaskIndex],
+              title,
+              description,
+            };
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            responseContent = `✅ I've updated the subtask "${title}" with your improvements. What would you like to do next?`;
+          } catch (error) {
+            console.error('Error improving subtask:', error);
+            responseContent =
+              "I had trouble improving the subtask. Could you please provide more details about what you'd like to change?";
+          }
+          break;
+
         case 'delete_task':
           try {
             const { columnIndex, taskIndex } = await AIService.deleteTask(
@@ -794,6 +828,7 @@ class ChatService {
         - delete_column: Delete a column
         - generate_task: Create a new task
         - delete_task: Delete a task
+        - improve_subtask: Improve a subtask's title or description
         - general_conversation: General queries
         
         Pay attention to the conversation context to handle follow-up messages.
@@ -842,6 +877,7 @@ class ChatService {
           | 'delete_task'
           | 'generate_task'
           | 'move_task'
+          | 'improve_subtask'
           | 'general_conversation',
         userId,
       };
