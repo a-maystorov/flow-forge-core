@@ -882,6 +882,7 @@ export class AIService {
       throw new Error('Failed to identify task for deletion');
     }
   }
+
   /**
    * Break down a task into subtasks based on user input and board context
    */
@@ -1030,6 +1031,86 @@ export class AIService {
     } catch (error) {
       console.error('Error improving subtask description:', error);
       throw new Error('Failed to improve subtask description');
+    }
+  }
+
+  /**
+   * Identify which subtask to delete based on user prompt and board context
+   * @param userPrompt - The user's message indicating which subtask to delete
+   * @param boardContext - The current state of the board
+   * @param chatContext - Previous conversation context for better understanding
+   * @returns Object containing columnIndex, taskIndex, and subtaskIndex of the subtask to delete
+   */
+  async deleteSubtask(
+    userPrompt: string,
+    boardContext: BoardContext,
+    chatContext: ChatContext
+  ): Promise<{ columnIndex: number; taskIndex: number; subtaskIndex: number }> {
+    try {
+      const response = await openai.client.chat.completions.create({
+        model: openai.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an AI assistant for a Kanban board application.
+            The current board has the following context: ${JSON.stringify(boardContext, null, 2)}
+            
+            Your task is to:
+            1. Identify which subtask the user wants to delete based on their message
+            2. Return the column index, task index, and subtask index of the identified subtask
+            
+            The response should be a valid JSON object with:
+            - columnIndex: number (index of the column containing the task)
+            - taskIndex: number (index of the task in its column)
+            - subtaskIndex: number (index of the subtask within the task)
+            
+            If the subtask cannot be clearly identified, return null for all indices.`,
+          },
+          {
+            role: 'user',
+            content: `User request: ${userPrompt}`,
+          },
+          ...chatContext,
+        ],
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('No content in AI response');
+      }
+
+      const result = JSON.parse(content);
+
+      const { columnIndex, taskIndex, subtaskIndex } = result;
+
+      if (
+        columnIndex === undefined ||
+        taskIndex === undefined ||
+        subtaskIndex === undefined
+      ) {
+        throw new Error(
+          'Invalid response format from AI - missing required indices'
+        );
+      }
+
+      // Validate the indices are within bounds
+      const column = boardContext.columns[columnIndex];
+      const task = column?.tasks?.[taskIndex];
+      const subtask = task?.subtasks?.[subtaskIndex];
+
+      if (!column || !task || !subtask) {
+        throw new Error('Subtask not found at the specified indices');
+      }
+
+      return {
+        columnIndex,
+        taskIndex,
+        subtaskIndex,
+      };
+    } catch (error) {
+      console.error('Error identifying subtask for deletion:', error);
+      throw new Error('Failed to identify subtask for deletion');
     }
   }
 

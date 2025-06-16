@@ -28,6 +28,7 @@ export interface MessageIntent {
     | 'move_task'
     | 'delete_column'
     | 'delete_task'
+    | 'delete_subtask'
     | 'generate_task'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
@@ -546,6 +547,38 @@ class ChatService {
           }
           break;
 
+        case 'delete_subtask':
+          try {
+            const { columnIndex, taskIndex, subtaskIndex } =
+              await AIService.deleteSubtask(
+                userMessage,
+                boardContext,
+                chatContext
+              );
+
+            // Create a deep copy of the columns array to avoid mutating the state directly
+            const updatedColumns = [...boardContext.columns];
+            const task = updatedColumns[columnIndex].tasks[taskIndex];
+
+            // Remove the subtask from the task's subtasks array
+            if (task.subtasks && task.subtasks.length > subtaskIndex) {
+              task.subtasks.splice(subtaskIndex, 1);
+
+              // Update the board context
+              await updateBoardContext({ columns: updatedColumns });
+              boardContext = { ...boardContext, columns: updatedColumns };
+
+              responseContent = `✅ I've deleted the subtask. What would you like to do next?`;
+            } else {
+              throw new Error('Subtask not found');
+            }
+          } catch (error) {
+            console.error('Error deleting subtask:', error);
+            responseContent =
+              'I had trouble finding the subtask to delete. Could you please be more specific about which subtask you want to remove?';
+          }
+          break;
+
         case 'improve_subtask':
           try {
             const { columnIndex, taskIndex, subtaskIndex, title, description } =
@@ -828,6 +861,7 @@ class ChatService {
         - delete_column: Delete a column
         - generate_task: Create a new task
         - delete_task: Delete a task
+        - delete_subtask: Delete a subtask from a task
         - improve_subtask: Improve a subtask's title or description
         - general_conversation: General queries
         
@@ -878,6 +912,7 @@ class ChatService {
           | 'generate_task'
           | 'move_task'
           | 'improve_subtask'
+          | 'delete_subtask'
           | 'general_conversation',
         userId,
       };
