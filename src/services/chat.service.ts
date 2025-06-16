@@ -280,9 +280,8 @@ class ChatService {
         case 'break_down_task':
           if (intent.taskTitle && intent.taskDescription) {
             const subtasksResult = await AIService.breakdownTaskIntoSubtasks(
-              intent.taskTitle,
-              intent.taskDescription,
               userMessage,
+              boardContext,
               chatContext
             );
 

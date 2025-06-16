@@ -9,7 +9,7 @@ import {
   PreviewTask,
   RawAIBoardOutput,
   RawAIColumnOutput,
-  RawAISubtaskBreakdownOutput,
+  // RawAISubtaskBreakdownOutput,
   RawAISubtaskOutput,
   RawAITaskOutput,
   TaskContext,
@@ -882,14 +882,12 @@ export class AIService {
       throw new Error('Failed to identify task for deletion');
     }
   }
-
   /**
-   * Break down a task into subtasks
+   * Break down a task into subtasks based on user input and board context
    */
   async breakdownTaskIntoSubtasks(
-    taskTitle: string,
-    taskDescription: string,
-    prompt: string,
+    userPrompt: string,
+    boardContext: BoardContext,
     chatContext: ChatContext
   ): Promise<PreviewSubtask[]> {
     try {
@@ -899,13 +897,33 @@ export class AIService {
           {
             role: 'system',
             content: `You are an AI assistant for a Kanban board application.
-              Your task is to break down a task into smaller subtasks based on the task title, description, and user request.
-              The response should be a valid JSON object containing a 'subtasks' array.
-              Each subtask in the array should have 'title', 'description', and 'priority' (low, medium, or high) fields.`,
+          The current board has the following context: ${JSON.stringify(boardContext, null, 2)}
+
+          Your task is to:
+          1. Determine which task the user wants to break down
+          2. Generate a list of meaningful subtasks for it
+          3. Each subtask must include:
+             - title (string)
+             - description (string)
+          
+          The response must be a valid JSON object like:
+          {
+            "columnIndex": number, // index of the column containing the parent task
+            "taskIndex": number,   // index of the task in its column
+            "subtasks": [
+              {
+                "title": string,
+                "description": string,
+              },
+              ...
+            ]
+          }
+          
+          If the task is unclear, return null for all fields.`,
           },
           {
             role: 'user',
-            content: `Parent Task Title: ${taskTitle}\nParent Task Description: ${taskDescription}\nUser Prompt: ${prompt}`,
+            content: `User request: ${userPrompt}`,
           },
           ...chatContext,
         ],
@@ -916,8 +934,18 @@ export class AIService {
       if (!content) {
         throw new Error('OpenAI response content is null');
       }
-      const subtasksData = JSON.parse(content) as RawAISubtaskBreakdownOutput;
-      return this.formatSubtasksResponse(subtasksData.subtasks || []);
+
+      const result = JSON.parse(content);
+
+      if (
+        result.columnIndex === undefined ||
+        result.taskIndex === undefined ||
+        !Array.isArray(result.subtasks)
+      ) {
+        throw new Error('Invalid response format from AI');
+      }
+
+      return this.formatSubtasksResponse(result.subtasks);
     } catch (error) {
       console.error('Error breaking down task:', error);
       throw new Error('Failed to break down task into subtasks');
