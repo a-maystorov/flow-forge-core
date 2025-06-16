@@ -810,6 +810,80 @@ export class AIService {
   }
 
   /**
+   * Identify which task to delete based on user prompt and board context
+   * @param userPrompt - The user's message indicating which task to delete
+   * @param boardContext - The current state of the board
+   * @param chatContext - Previous conversation context for better understanding
+   * @returns Object containing columnIndex and taskIndex of the task to delete
+   */
+  async deleteTask(
+    userPrompt: string,
+    boardContext: BoardContext,
+    chatContext: ChatContext
+  ): Promise<{ columnIndex: number; taskIndex: number }> {
+    try {
+      const response = await openai.client.chat.completions.create({
+        model: openai.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are an AI assistant for a Kanban board application.
+              The current board has the following context: ${JSON.stringify(boardContext, null, 2)}
+              
+              Your task is to:
+              1. Identify which task the user wants to delete based on their message
+              2. Return the column index and task index of the identified task
+              
+              The response should be a valid JSON object with:
+              - columnIndex: number (index of the column containing the task)
+              - taskIndex: number (index of the task in its column)
+              
+              If the task cannot be clearly identified, return null for both indices.`,
+          },
+          {
+            role: 'user',
+            content: `User request: ${userPrompt}`,
+          },
+          ...chatContext,
+        ],
+        response_format: { type: 'json_object' },
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('No content in AI response');
+      }
+
+      const result = JSON.parse(content);
+
+      if (result.columnIndex === undefined || result.taskIndex === undefined) {
+        throw new Error(
+          'Invalid response format from AI - missing required indices'
+        );
+      }
+
+      // Validate the indices are within bounds
+      if (
+        result.columnIndex < 0 ||
+        result.columnIndex >= boardContext.columns.length ||
+        result.taskIndex < 0 ||
+        result.taskIndex >=
+          (boardContext.columns[result.columnIndex]?.tasks?.length || 0)
+      ) {
+        throw new Error('Task not found at the specified indices');
+      }
+
+      return {
+        columnIndex: result.columnIndex,
+        taskIndex: result.taskIndex,
+      };
+    } catch (error) {
+      console.error('Error identifying task for deletion:', error);
+      throw new Error('Failed to identify task for deletion');
+    }
+  }
+
+  /**
    * Break down a task into subtasks
    */
   async breakdownTaskIntoSubtasks(
@@ -981,63 +1055,54 @@ export class AIService {
     boardContext: BoardContext
   ): Promise<string> {
     try {
-      let boardSummary = 'No active board context';
-
-      if (boardContext) {
-        boardSummary =
-          `Current Board: ${boardContext.name || 'Untitled Board'}\n` +
-          `Columns: ${boardContext.columns?.map((col) => `\n- ${col.name} (${col.tasks?.length || 0} tasks)`).join('') || 'None'}`;
-      }
-
       const systemMessage = `You are the Flow Forge assistant, here to help users manage their Kanban boards and tasks.
 
-          AVAILABLE CAPABILITIES:
-          1. Board Management:
-          - Create new Kanban boards from scratch
-          - Generate new columns based on workflow needs
-          - Rename, reorder, or delete columns
-          - Analyze and optimize board structure
+        AVAILABLE CAPABILITIES:
+        1. **Board Management**
+        - Create new Kanban boards from scratch
+        - Generate new columns based on workflow needs
+        - Rename, reorder, or delete columns
+        - Analyze and optimize board structure
 
-          2. Task Management:
-          - Create new tasks with descriptions
-          - Move tasks between columns
-          - Generate multiple related tasks at once
-          - Improve and refine task descriptions
-          - Break down complex tasks into subtasks
-          - Improve existing subtask descriptions
+        2. **Task Management**
+        - Create new tasks with descriptions
+        - Move tasks between columns
+        - Generate multiple related tasks at once
+        - Improve and refine task descriptions
+        - Break down complex tasks into subtasks
+        - Improve existing subtask descriptions
 
-          3. Workflow Analysis:
-          - Suggest workflow improvements
-          - Identify bottlenecks in current setup
-          - Recommend task prioritization
-          - Provide productivity tips
+        3. **Workflow Analysis**
+        - Suggest workflow improvements
+        - Identify bottlenecks in current setup
+        - Recommend task prioritization
+        - Provide productivity tips
 
-          CURRENT CONTEXT:
-          ${boardSummary}
+        GUIDELINES:
+        - If no board context is available, do not treat this as an error.
+        - If the user greets you or asks what you can do, respond warmly and mention your capabilities.
+        - Gently encourage creating a board only if it makes sense in the conversation.
+        - When referencing tasks or columns, use their exact names from the context.
+        - Keep responses concise but helpful (2–4 sentences).
+        - Use markdown for readability (**bold** for emphasis, \`code\` for board/column/task names).
+        - Ask clarifying questions if the user's intent is unclear.
+        - Maintain a friendly, professional, and encouraging tone.
+        - Use emojis sparingly for engagement (e.g. 👋, ✅, 🚀).
 
-          INSTRUCTIONS:
-          - Be proactive in suggesting relevant actions based on the current board state
-          - When referencing tasks or columns, use their exact names from the context
-          - Keep responses concise but helpful (2-4 sentences typically)
-          - Use markdown for better readability (e.g., **bold** for emphasis, \`code\` for names)
-          - If the user's request is ambiguous, ask clarifying questions
-          - Maintain a friendly, professional, and encouraging tone
-          - Use emojis occasionally but sparingly for emphasis`;
-
-      const userMessageWithContext = boardContext
-        ? `Here's the current state of my board:\n${boardSummary}\n\n${message}`
-        : message;
+        CONTEXT:
+        ${boardContext ? `Board context:\n${boardContext}` : 'Board context: (none)'}`;
 
       const response = await openai.client.chat.completions.create({
         model: openai.model,
         messages: [
           { role: 'system', content: systemMessage },
           ...chatContext,
-          { role: 'user', content: userMessageWithContext },
+          { role: 'user', content: message },
         ],
         temperature: 0.7,
         max_tokens: 150,
       });
+
       return (
         response.choices[0].message.content ||
         "I'm here to help! What would you like to work on today?"

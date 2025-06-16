@@ -26,6 +26,7 @@ export interface MessageIntent {
     | 'move_column'
     | 'move_task'
     | 'delete_column'
+    | 'delete_task'
     | 'generate_task'
     | 'general_conversation';
   userId: mongoose.Types.ObjectId;
@@ -545,6 +546,34 @@ class ChatService {
           }
           break;
 
+        case 'delete_task':
+          try {
+            const { columnIndex, taskIndex } = await AIService.deleteTask(
+              userMessage,
+              boardContext,
+              chatContext
+            );
+
+            const taskToDelete =
+              boardContext.columns[columnIndex].tasks[taskIndex];
+
+            const updatedColumns = [...boardContext.columns];
+
+            updatedColumns[columnIndex].tasks = updatedColumns[
+              columnIndex
+            ].tasks.filter((_, index) => index !== taskIndex);
+
+            await updateBoardContext({ columns: updatedColumns });
+            boardContext = { ...boardContext, columns: updatedColumns };
+
+            responseContent = `✅ I've deleted the task "${taskToDelete.title}" from the "${updatedColumns[columnIndex].name}" column. What would you like to do next?`;
+          } catch (error) {
+            console.error('Error deleting task:', error);
+            responseContent =
+              'I had trouble identifying or deleting the task. Could you please be more specific about which task you want to delete?';
+          }
+          break;
+
         case 'generate_task':
           try {
             const newTask = await AIService.generateTask(
@@ -765,6 +794,7 @@ class ChatService {
         - move_task: Move a task to a different column
         - delete_column: Delete a column
         - generate_task: Create a new task
+        - delete_task: Delete a task
         - general_conversation: General queries
         
         Pay attention to the conversation context to handle follow-up messages.
@@ -810,6 +840,7 @@ class ChatService {
           | 'rename_column'
           | 'move_column'
           | 'delete_column'
+          | 'delete_task'
           | 'generate_task'
           | 'move_task'
           | 'general_conversation',
