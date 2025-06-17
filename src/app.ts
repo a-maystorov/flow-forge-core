@@ -1,20 +1,21 @@
 import dotenv from 'dotenv';
 import express from 'express';
 // Only importing for type information, not for runtime
+import { createServer } from 'http';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { join } from 'path';
+import { Server } from 'socket.io';
 import type {} from '../@types/express';
 import corsMiddleware from './config/cors';
 import { connectDB } from './config/database';
 import { errorHandler } from './middleware';
+import Chat from './models/chat.model';
 import authRoutes from './routes/auth.routes';
 import boardRoutes from './routes/board.routes';
+import chatRoutes from './routes/chat.routes';
 import userRoutes from './routes/user.routes';
-import { Server } from 'socket.io';
-import { createServer } from 'http';
 import chatService from './services/chat.service';
-import mongoose from 'mongoose';
-import Chat from './models/chat.model';
-import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ app.use(corsMiddleware);
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/boards', boardRoutes);
+app.use('/api/chats', chatRoutes);
 
 app.get('/chat-test', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));
