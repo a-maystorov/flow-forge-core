@@ -2,13 +2,29 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-    <title>Socket.IO chat</title>
+    <title>Flow Forge Chat Test</title>
     <style>
+      .error-message {
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 10px;
+        margin: 10px 0;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        text-align: center;
+        position: fixed;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+      }
       body {
         margin: 0;
         padding-bottom: 3rem;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
           Helvetica, Arial, sans-serif;
+        display: flex;
       }
 
       #form {
@@ -47,55 +63,336 @@
         list-style-type: none;
         margin: 0;
         padding: 0;
+        overflow-y: auto;
+        max-height: calc(100vh - 3rem);
       }
       #messages > li {
         padding: 0.5rem 1rem;
+        word-wrap: break-word;
       }
       #messages > li:nth-child(odd) {
         background: #efefef;
       }
+
+      /* Chat sidebar styles */
+      .chat-container {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      .sidebar {
+        width: 250px;
+        background-color: #f5f5f5;
+        border-right: 1px solid #ddd;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .main {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+
+      .chat-list {
+        list-style-type: none;
+        padding: 0;
+        margin: 0;
+        margin-top: 1rem;
+        overflow-y: auto;
+        flex-grow: 1;
+      }
+
+      .chat-item {
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        background-color: white;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 1px solid #ddd;
+      }
+
+      .chat-item.active {
+        background-color: #e0f7fa;
+        border-color: #80deea;
+      }
+
+      .chat-title {
+        font-weight: bold;
+        margin-bottom: 0.25rem;
+      }
+
+      .chat-date {
+        font-size: 0.8rem;
+        color: #666;
+      }
+
+      .new-chat-btn {
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        padding: 0.75rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin-bottom: 1rem;
+      }
+
+      .new-chat-btn:hover {
+        background-color: #388e3c;
+      }
+
+      .chat-header {
+        padding: 1rem;
+        background-color: #f5f5f5;
+        border-bottom: 1px solid #ddd;
+        font-weight: bold;
+      }
     </style>
   </head>
   <body>
-    <ul id="messages"></ul>
-    <form id="form" action="">
-      <input id="input" autocomplete="off" /><button>Send</button>
-    </form>
+    <div class="chat-container">
+      <div class="sidebar">
+        <button id="new-chat-btn" class="new-chat-btn">New Chat</button>
+        <ul id="chat-list" class="chat-list"></ul>
+      </div>
+      <div class="main">
+        <div id="chat-header" class="chat-header">No chat selected</div>
+        <ul id="messages"></ul>
+        <form id="form" action="">
+          <input id="input" autocomplete="off" /><button>Send</button>
+        </form>
+      </div>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      const socket = io();
+      // Get authentication token from localStorage or session
+      // In a real app, you would get this from your authentication system
+      let authToken = localStorage.getItem('token');
 
-      const form = document.getElementById('form');
-      const input = document.getElementById('input');
-      const messages = document.getElementById('messages');
+      // If there's no token, show a login form or get a temporary session
+      if (!authToken) {
+        // For demo purposes, we'll create a temporary session
+        getTemporarySession();
+      } else {
+        // Connect to socket with authentication
+        connectSocket(authToken);
+      }
 
-      form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        if (input.value) {
-          socket.emit('chat message', input.value);
-          input.value = '';
-        }
-      });
-
-      socket.on('chat message', (msg) => {
-        const item = document.createElement('li');
-
+      // Function to get a temporary session
+      async function getTemporarySession() {
         try {
-          const parsed = JSON.parse(msg);
-          const content = parsed.message || parsed.error || '';
-          const action = parsed.action ? `\n[action: ${parsed.action}]` : '';
-          const data = parsed.data
-            ? `\n[data]: ${JSON.stringify(parsed.data, null, 2)}`
-            : '';
+          const response = await fetch('/api/auth/temp-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({}),
+          });
 
-          item.textContent = `[${parsed.from}] ${content}${action}${data}`;
-        } catch {
-          item.textContent = msg;
+          const data = await response.json();
+
+          if (data.token) {
+            // Store token and connect
+            localStorage.setItem('token', data.token);
+            connectSocket(data.token);
+          } else {
+            showError('Failed to get authentication token');
+          }
+        } catch (error) {
+          showError('Authentication error: ' + error.message);
+        }
+      }
+
+      // Function to connect socket with authentication
+      function connectSocket(token) {
+        const socket = io({
+          auth: {
+            token: token,
+          },
+        });
+
+        // Handle connection errors
+        socket.on('connect_error', (err) => {
+          showError(
+            `Connection error: ${err.message}. Please refresh the page.`
+          );
+        });
+
+        // Once connected successfully, initialize the chat interface
+        socket.on('connect', () => {
+          initializeChatInterface(socket);
+        });
+      }
+
+      function showError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = message;
+        document.body.prepend(errorDiv);
+      }
+
+      // Initialize the chat interface once authenticated
+      function initializeChatInterface(socket) {
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const messages = document.getElementById('messages');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const chatList = document.getElementById('chat-list');
+        const chatHeader = document.getElementById('chat-header');
+
+        // Store chat data
+        let chats = [];
+        let activeChatId = null;
+
+        // Initialize by getting all existing chats
+        socket.emit('get chats');
+
+        // Create a new chat
+        newChatBtn.addEventListener('click', () => {
+          const chatName = prompt('Enter chat name:', 'New Chat');
+          if (chatName) {
+            socket.emit('create chat', chatName);
+          }
+        });
+
+        // Send message when form is submitted
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          if (input.value && activeChatId) {
+            socket.emit('chat message', input.value);
+            input.value = '';
+          } else if (input.value) {
+            // If no active chat, create one first
+            socket.emit('create chat', 'New Chat');
+            // The message will be sent after chat is created and selected
+            const pendingMessage = input.value;
+            input.value = '';
+
+            // Listen for chat created event once
+            const chatCreatedListener = (data) => {
+              socket.emit('chat message', pendingMessage);
+              socket.off('chat created', chatCreatedListener);
+            };
+            socket.on('chat created', chatCreatedListener);
+          }
+        });
+
+        // Render chat list
+        function renderChatList() {
+          chatList.innerHTML = '';
+          chats.forEach((chat) => {
+            const li = document.createElement('li');
+            li.className = `chat-item ${chat._id === activeChatId ? 'active' : ''}`;
+            li.dataset.id = chat._id;
+
+            const title = document.createElement('div');
+            title.className = 'chat-title';
+            title.textContent = chat.title;
+
+            const date = document.createElement('div');
+            date.className = 'chat-date';
+            date.textContent = new Date(chat.createdAt).toLocaleString();
+
+            li.appendChild(title);
+            li.appendChild(date);
+
+            li.addEventListener('click', () => {
+              selectChat(chat._id);
+            });
+
+            chatList.appendChild(li);
+          });
         }
 
-        messages.appendChild(item);
-        window.scrollTo(0, document.body.scrollHeight);
-      });
+        // Select a chat
+        function selectChat(chatId) {
+          if (!chatId) return;
+
+          console.log('Selecting chat with ID:', chatId);
+          activeChatId = chatId;
+          socket.emit('select chat', chatId);
+
+          // Update UI
+          const activeChat = chats.find((c) => c._id === chatId);
+          if (activeChat) {
+            chatHeader.textContent = activeChat.title;
+          } else {
+            console.log('Active chat not found in chats array:', chatId, chats);
+          }
+
+          // Clear messages
+          messages.innerHTML = '';
+
+          // Update chat list UI
+          renderChatList();
+        }
+
+        // Handle receiving chat list
+        socket.on('chats list', (data) => {
+          chats = data;
+          renderChatList();
+        });
+
+        // Handle chat creation
+        socket.on('chat created', (data) => {
+          console.log('Chat created:', data);
+          // Add to our chats array if it doesn't exist already
+          if (!chats.some((chat) => chat._id === data._id)) {
+            chats.unshift(data);
+          }
+          // Select the newly created chat
+          selectChat(data._id);
+        });
+
+        // Handle chat selection
+        socket.on('chat selected', (data) => {
+          // Already handled in selectChat function
+        });
+
+        // Handle errors
+        socket.on('error', (data) => {
+          alert(`Error: ${data.message}`);
+        });
+
+        // Handle chat messages
+        socket.on('chat message', (msg) => {
+          const item = document.createElement('li');
+
+          try {
+            const parsed = JSON.parse(msg);
+            const content = parsed.message || parsed.error || '';
+            const action = parsed.action ? `\n[action: ${parsed.action}]` : '';
+            const data = parsed.data
+              ? `\n[data]: ${JSON.stringify(parsed.data, null, 2)}`
+              : '';
+
+            console.log(
+              'Message received for chat:',
+              parsed.chatId,
+              'Active chat:',
+              activeChatId
+            );
+
+            // Only display messages for the active chat
+            if (parsed.chatId && parsed.chatId !== activeChatId) {
+              console.log('Skipping message for different chat');
+              return; // Skip messages for other chats
+            }
+
+            item.textContent = `[${parsed.from}] ${content}${action}${data}`;
+            messages.appendChild(item);
+            messages.scrollTop = messages.scrollHeight;
+          } catch {
+            item.textContent = msg;
+            messages.appendChild(item);
+            messages.scrollTop = messages.scrollHeight;
+          }
+        });
+      }
     </script>
   </body>
 </html>

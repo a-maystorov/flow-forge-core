@@ -14,6 +14,7 @@ import { createServer } from 'http';
 import chatService from './services/chat.service';
 import mongoose from 'mongoose';
 import Chat from './models/chat.model';
+import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
@@ -23,7 +24,13 @@ if (process.env.NODE_ENV !== 'test') {
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.NODE_ENV === 'production' ? false : '*',
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
 
 const PORT = process.env.PORT || 3000;
 
@@ -38,31 +45,159 @@ app.get('/chat-test', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));
 });
 
+// Map to store the currently selected chat ID for each socket connection
+const socketChatMap = new Map<string, mongoose.Types.ObjectId>();
+// Map to store the authenticated userId for each socket
+const socketUserMap = new Map<string, mongoose.Types.ObjectId>();
+
+// Socket.IO middleware for authentication
+io.use((socket, next) => {
+  try {
+    const token =
+      socket.handshake.auth.token || socket.handshake.headers['x-auth-token'];
+
+    if (!token) {
+      console.log('No auth token provided for socket connection');
+      return next(new Error('Authentication required'));
+    }
+
+    // Verify the JWT token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as {
+      _id: string;
+    };
+
+    if (!decoded._id) {
+      return next(new Error('Invalid authentication token'));
+    }
+
+    // Store the userId in the socket map
+    const userId = new mongoose.Types.ObjectId(decoded._id);
+    socketUserMap.set(socket.id, userId);
+    console.log('Authenticated socket connection for user:', userId.toString());
+    next();
+  } catch (error) {
+    console.error('Socket authentication error:', error);
+    next(new Error('Authentication failed'));
+  }
+});
+
 io.on('connection', (socket) => {
+  // Get the authenticated user ID from the socket map
+  const userId = socketUserMap.get(socket.id);
+
+  if (!userId) {
+    console.error('No authenticated userId found for socket:', socket.id);
+    socket.disconnect(true);
+    return;
+  }
+
+  // Event for creating a new chat
+  socket.on('create chat', async (chatTitle = 'New Chat') => {
+    try {
+      // Create a new chat
+      const newChat = await chatService.createChat(userId, chatTitle);
+
+      // Set this chat as the currently selected chat for this socket
+      socketChatMap.set(socket.id, newChat._id);
+
+      // Emit the new chat back to the client
+      socket.emit('chat created', {
+        _id: newChat._id.toString(), // Use string ID and ensure consistent property naming
+        chatId: newChat._id.toString(),
+        title: newChat.title,
+        createdAt: newChat.createdAt,
+      });
+    } catch (err) {
+      console.error('Error creating chat:', err);
+      socket.emit('error', { message: 'Failed to create chat' });
+    }
+  });
+
+  // Event for selecting an existing chat
+  socket.on('select chat', async (chatId) => {
+    try {
+      console.log('Selecting chat with ID:', chatId);
+
+      // Convert chatId to ObjectId if it's a string
+      const chatObjectId =
+        typeof chatId === 'string'
+          ? new mongoose.Types.ObjectId(chatId)
+          : chatId;
+
+      console.log('Converted to ObjectId:', chatObjectId);
+
+      // Check if the chat exists and belongs to the user
+      const chat = await Chat.findOne({ _id: chatObjectId, userId });
+      console.log('Found chat:', chat ? 'Yes' : 'No');
+
+      if (!chat) {
+        return socket.emit('error', { message: 'Chat not found' });
+      }
+
+      // Set this as the currently selected chat
+      socketChatMap.set(socket.id, chatObjectId);
+      socket.emit('chat selected', {
+        chatId: chatObjectId.toString(),
+        _id: chatObjectId.toString(),
+      });
+    } catch (err) {
+      console.error('Error selecting chat:', err);
+      socket.emit('error', { message: 'Failed to select chat' });
+    }
+  });
+
+  // Event for getting all chats for the current user
+  socket.on('get chats', async () => {
+    try {
+      const chats = await Chat.find({ userId })
+        .sort({ lastMessageAt: -1 })
+        .select('_id title createdAt lastMessageAt')
+        .exec();
+
+      // Convert the ObjectIds to strings for consistent handling on the client
+      const chatsWithStringIds = chats.map((chat) => ({
+        ...chat.toObject(),
+        _id: chat._id.toString(),
+      }));
+
+      socket.emit('chats list', chatsWithStringIds);
+    } catch (err) {
+      console.error('Error getting chats:', err);
+      socket.emit('error', { message: 'Failed to get chats list' });
+    }
+  });
+
   socket.on('chat message', async (msg) => {
     try {
-      // Create or get a chat for this user
-      const userId = new mongoose.Types.ObjectId('66610a87b983f79ff5a71bb6'); // replace with actual or mock userId
+      // Get the currently selected chat ID for this socket connection
+      const chatId = socketChatMap.get(socket.id);
 
-      // Try to get existing chats for this user
-      const existingChats = await Chat.find({ userId })
-        .sort({ lastMessageAt: -1 })
-        .limit(1);
-      let chatId: string | mongoose.Types.ObjectId;
-
-      if (existingChats.length > 0) {
-        // Use the most recent chat
-        chatId = existingChats[0]._id;
-      } else {
-        // Create a new chat if none exists
+      // If no chat is selected, create a new one
+      if (!chatId) {
+        console.log('No chat selected, creating a new one');
         const newChat = await chatService.createChat(userId, 'New Chat');
-        chatId = newChat._id;
+        socketChatMap.set(socket.id, newChat._id);
+
+        // Inform client about the new chat
+        socket.emit('chat created', {
+          _id: newChat._id.toString(),
+          chatId: newChat._id.toString(),
+          title: newChat.title,
+          createdAt: newChat.createdAt,
+        });
       }
 
       // 1. Emit the user's message back to the chat
+      // Get the current chat ID (we know it exists at this point)
+      const currentChatId = socketChatMap.get(socket.id)!;
+
       socket.emit(
         'chat message',
-        JSON.stringify({ from: 'User', message: msg })
+        JSON.stringify({
+          chatId: currentChatId.toString(), // Include the chat ID with the message
+          from: 'User',
+          message: msg,
+        })
       );
 
       // 2. Emit loading message
@@ -70,6 +205,7 @@ io.on('connection', (socket) => {
       socket.emit(
         'chat message',
         JSON.stringify({
+          chatId: currentChatId.toString(), // Include the chat ID with the message
           from: 'AI Assistant',
           loading: true,
           id: loadingMsgId,
@@ -77,7 +213,11 @@ io.on('connection', (socket) => {
         })
       );
 
-      const result = await chatService.processUserMessage(chatId, userId, msg);
+      const result = await chatService.processUserMessage(
+        currentChatId,
+        userId,
+        msg
+      );
 
       // Log the board context to the console for debugging
       if (result.boardContext) {
@@ -92,6 +232,7 @@ io.on('connection', (socket) => {
         'chat message',
         JSON.stringify(
           {
+            chatId: currentChatId.toString(), // Include the chat ID with the message
             from: 'AI Assistant',
             id: loadingMsgId,
             action: result.action,
@@ -105,14 +246,23 @@ io.on('connection', (socket) => {
       );
     } catch (err) {
       console.error('AI error:', err);
+      const errorChatId = socketChatMap.get(socket.id)?.toString() || 'unknown';
       socket.emit(
         'chat message',
         JSON.stringify({
+          chatId: errorChatId, // Include chat ID even with errors
           from: 'AI Assistant',
           error: 'Something went wrong while processing your message.',
         })
       );
     }
+  });
+
+  // Clean up when socket disconnects
+  socket.on('disconnect', () => {
+    socketChatMap.delete(socket.id);
+    socketUserMap.delete(socket.id);
+    console.log('Socket disconnected, cleaned up maps');
   });
 });
 
