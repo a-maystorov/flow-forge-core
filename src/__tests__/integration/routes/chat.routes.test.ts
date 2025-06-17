@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import request from 'supertest';
 import app from '../../../app';
-import Chat from '../../../models/chat.model';
-import User from '../../../models/user.model';
 import { connectDB, disconnectDB } from '../../../config/database';
+import Chat from '../../../models/chat.model';
+import Message, { MessageRole } from '../../../models/message.model';
+import User from '../../../models/user.model';
 
 describe('/api/chats', () => {
   let testUser: InstanceType<typeof User>;
@@ -15,6 +16,7 @@ describe('/api/chats', () => {
 
     await Chat.deleteMany({});
     await User.deleteMany({});
+    await Message.deleteMany({});
 
     testUser = new User({
       email: 'test@example.com',
@@ -51,9 +53,35 @@ describe('/api/chats', () => {
       boardContext: { boards: [] },
     });
     await otherUserChat.save();
+
+    // Create test messages for the first chat
+    for (let i = 1; i <= 3; i++) {
+      const userMessage = new Message({
+        chatId: testChats[0]._id,
+        role: MessageRole.USER,
+        content: `Test user message ${i}`,
+      });
+      await userMessage.save();
+
+      const assistantMessage = new Message({
+        chatId: testChats[0]._id,
+        role: MessageRole.ASSISTANT,
+        content: `Test assistant response ${i}`,
+      });
+      await assistantMessage.save();
+    }
+
+    // Create a message for another chat
+    const otherChatMessage = new Message({
+      chatId: testChats[1]._id,
+      role: MessageRole.USER,
+      content: 'Message in another chat',
+    });
+    await otherChatMessage.save();
   });
 
   afterAll(async () => {
+    await Message.deleteMany({});
     await Chat.deleteMany({});
     await User.deleteMany({});
     await disconnectDB();
@@ -118,6 +146,74 @@ describe('/api/chats', () => {
       const testChat = testChats[0];
 
       const response = await request(app).get(`/api/chats/${testChat._id}`);
+      expect(response.status).toBe(401);
+    });
+  });
+
+  describe('GET /api/chats/:id/messages', () => {
+    it('should get all messages for a specific chat', async () => {
+      const testChat = testChats[0];
+
+      const response = await request(app)
+        .get(`/api/chats/${testChat._id}/messages`)
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBeTruthy();
+      expect(response.body.length).toBe(6); // 3 user messages + 3 assistant messages
+
+      // Check that all messages belong to the correct chat
+      for (const message of response.body) {
+        expect(message.chatId.toString()).toBe(testChat._id.toString());
+        expect(message).toHaveProperty('role');
+        expect(message).toHaveProperty('content');
+        expect(['user', 'assistant', 'system']).toContain(message.role);
+      }
+
+      // Verify messages are sorted by createdAt in ascending order
+      for (let i = 1; i < response.body.length; i++) {
+        const prevDate = new Date(response.body[i - 1].createdAt).getTime();
+        const currDate = new Date(response.body[i].createdAt).getTime();
+        expect(prevDate).toBeLessThanOrEqual(currDate);
+      }
+    });
+
+    it('should return an empty array for a chat with no messages', async () => {
+      const testChat = testChats[2]; // The third test chat has no messages
+
+      const response = await request(app)
+        .get(`/api/chats/${testChat._id}/messages`)
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBeTruthy();
+      expect(response.body.length).toBe(0);
+    });
+
+    it('should return 404 for non-existent chat', async () => {
+      const nonExistentId = new mongoose.Types.ObjectId();
+
+      const response = await request(app)
+        .get(`/api/chats/${nonExistentId}/messages`)
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 404 for invalid chat ID', async () => {
+      const response = await request(app)
+        .get('/api/chats/invalid-id/messages')
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 401 if not authenticated', async () => {
+      const testChat = testChats[0];
+
+      const response = await request(app).get(
+        `/api/chats/${testChat._id}/messages`
+      );
       expect(response.status).toBe(401);
     });
   });

@@ -4,6 +4,7 @@ import auth from '../middleware/auth.middleware';
 import Chat from '../models/chat.model';
 import { asyncHandler } from '../utils/asyncHandler';
 import { NotFoundError } from '../utils/errors';
+import Message from '../models/message.model';
 
 const router = express.Router();
 
@@ -32,6 +33,26 @@ router.get(
     }
 
     res.status(200).json(chat);
+  })
+);
+
+router.get(
+  '/:id/messages',
+  auth,
+  validateObjectId('id'),
+  asyncHandler(async (req, res) => {
+    const chat = await Chat.findById(req.params.id).exec();
+
+    if (!chat) {
+      throw new NotFoundError('Chat not found');
+    }
+
+    const messages = await Message.find({ chatId: req.params.id })
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec();
+
+    res.status(200).json(messages);
   })
 );
 
