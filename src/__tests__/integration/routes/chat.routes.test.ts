@@ -217,4 +217,102 @@ describe('/api/chats', () => {
       expect(response.status).toBe(401);
     });
   });
+
+  describe('DELETE /api/chats/:id', () => {
+    it('should delete a chat and all associated messages', async () => {
+      const tempChat = new Chat({
+        userId: testUser._id,
+        title: 'Temp Chat for Deletion',
+        boardContext: { boards: [] },
+      });
+      await tempChat.save();
+
+      const tempMessage1 = new Message({
+        chatId: tempChat._id,
+        role: MessageRole.USER,
+        content: 'Test message 1 for deletion',
+      });
+      await tempMessage1.save();
+
+      const tempMessage2 = new Message({
+        chatId: tempChat._id,
+        role: MessageRole.ASSISTANT,
+        content: 'Test message 2 for deletion',
+      });
+      await tempMessage2.save();
+
+      const messagesBefore = await Message.find({ chatId: tempChat._id });
+      expect(messagesBefore.length).toBe(2);
+
+      const response = await request(app)
+        .delete(`/api/chats/${tempChat._id}`)
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message).toBe(
+        'Chat and all associated messages deleted successfully'
+      );
+
+      const chatAfter = await Chat.findById(tempChat._id);
+      expect(chatAfter).toBeNull();
+
+      const messagesAfter = await Message.find({ chatId: tempChat._id });
+      expect(messagesAfter.length).toBe(0);
+    });
+
+    it('should return 404 for non-existent chat', async () => {
+      const nonExistentId = new mongoose.Types.ObjectId();
+
+      const response = await request(app)
+        .delete(`/api/chats/${nonExistentId}`)
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(404);
+    });
+
+    it("should return 403 when trying to delete another user's chat", async () => {
+      // Create a new user
+      const anotherUser = new User({
+        email: 'another@example.com',
+        username: 'anotheruser',
+        password: 'hashedpassword',
+      });
+      await anotherUser.save();
+
+      const anotherUserChat = new Chat({
+        userId: anotherUser._id,
+        title: 'Another User Chat',
+        boardContext: { boards: [] },
+      });
+      await anotherUserChat.save();
+
+      const response = await request(app)
+        .delete(`/api/chats/${anotherUserChat._id}`)
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(403);
+
+      const chatAfter = await Chat.findById(anotherUserChat._id);
+      expect(chatAfter).not.toBeNull();
+
+      await Chat.findByIdAndDelete(anotherUserChat._id);
+      await User.findByIdAndDelete(anotherUser._id);
+    });
+
+    it('should return 404 for invalid chat ID', async () => {
+      const response = await request(app)
+        .delete('/api/chats/invalid-id')
+        .set('x-auth-token', authToken);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 401 if not authenticated', async () => {
+      const testChat = testChats[0];
+
+      const response = await request(app).delete(`/api/chats/${testChat._id}`);
+      expect(response.status).toBe(401);
+    });
+  });
 });

@@ -3,7 +3,7 @@ import { validateObjectId } from '../middleware';
 import auth from '../middleware/auth.middleware';
 import Chat from '../models/chat.model';
 import { asyncHandler } from '../utils/asyncHandler';
-import { NotFoundError } from '../utils/errors';
+import { ForbiddenError, NotFoundError } from '../utils/errors';
 import Message from '../models/message.model';
 
 const router = express.Router();
@@ -53,6 +53,37 @@ router.get(
       .exec();
 
     res.status(200).json(messages);
+  })
+);
+
+router.delete(
+  '/:id',
+  auth,
+  validateObjectId('id'),
+  asyncHandler(async (req, res) => {
+    const chat = await Chat.findById(req.params.id).exec();
+
+    if (!chat) {
+      throw new NotFoundError('Chat not found');
+    }
+
+    if (req.userId?.toString() !== chat.userId.toString()) {
+      throw new ForbiddenError(
+        'You do not have permission to delete this chat'
+      );
+    }
+
+    try {
+      await Message.deleteMany({ chatId: req.params.id });
+      await Chat.findByIdAndDelete(req.params.id);
+
+      res.status(200).json({
+        message: 'Chat and all associated messages deleted successfully',
+      });
+    } catch (error) {
+      console.error('Error deleting chat:', error);
+      throw error;
+    }
   })
 );
 
