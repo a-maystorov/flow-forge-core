@@ -46,11 +46,13 @@ class ChatService {
    * Creates a new chat conversation
    * @param userId - The ID of the user creating the chat
    * @param initialTitle - Optional initial title for the chat
+   * @param boardId - Optional ID of an existing board to populate context from
    * @returns The newly created chat
    */
   async createChat(
     userId: string | mongoose.Types.ObjectId,
-    initialTitle: string = 'New Conversation'
+    initialTitle: string = 'New Conversation',
+    boardId?: string | mongoose.Types.ObjectId
   ) {
     try {
       const userObjectId =
@@ -58,8 +60,19 @@ class ChatService {
           ? new mongoose.Types.ObjectId(userId)
           : userId;
 
-      // Initialize with empty board context
-      const boardContext = BoardContextService.getEmptyBoardContext();
+      // Initialize with empty board context by default
+      let boardContext = BoardContextService.getEmptyBoardContext();
+
+      // If a boardId is provided, populate the board context
+      if (boardId) {
+        try {
+          boardContext =
+            await BoardContextService.populateBoardContextFromBoard(boardId);
+        } catch (boardError) {
+          console.error('Error populating board context:', boardError);
+          // If board fetching fails, fall back to empty context
+        }
+      }
 
       const chat = new Chat({
         userId: userObjectId,
@@ -144,14 +157,41 @@ class ChatService {
    * @param userMessage - The message from the user
    * @returns The AI response message
    */
+  /**
+   * Process a user message and generate an AI response
+   * @param chatId - The ID of the chat
+   * @param userId - The ID of the user
+   * @param userMessage - The message from the user
+   * @param boardId - Optional ID of a board to update context from
+   * @returns The AI response message
+   */
   async processUserMessage(
     chatId: string | mongoose.Types.ObjectId,
     userId: mongoose.Types.ObjectId,
-    userMessage: string
+    userMessage: string,
+    boardId?: string | mongoose.Types.ObjectId
   ) {
-    // Convert chatId to ObjectId if it's a string
     const chatObjectId =
       typeof chatId === 'string' ? new mongoose.Types.ObjectId(chatId) : chatId;
+
+    if (boardId) {
+      const chat = await Chat.findById(chatObjectId)
+        .select('boardContext')
+        .lean();
+
+      if (!chat?.boardContext?.name || !chat?.boardContext?.columns?.length) {
+        try {
+          const boardContext =
+            await BoardContextService.populateBoardContextFromBoard(boardId);
+          await BoardContextService.updateBoardContext(
+            chatObjectId,
+            boardContext
+          );
+        } catch (boardError) {
+          console.error('Error updating board context:', boardError);
+        }
+      }
+    }
 
     try {
       await this.addMessage(chatObjectId, MessageRole.USER, userMessage);
@@ -193,7 +233,45 @@ class ChatService {
       };
 
       switch (intent.action) {
-        case 'generate_board':
+        case 'generate_board': {
+          const existingContext =
+            await BoardContextService.getBoardContext(chatObjectId);
+          let shouldReset = true;
+
+          if (
+            existingContext?.name ||
+            (existingContext?.columns && existingContext.columns.length > 0)
+          ) {
+            const freshBoardKeywords = [
+              'new board',
+              'fresh board',
+              'from scratch',
+              'empty board',
+              'start over',
+              'brand new',
+            ];
+
+            const lowerCaseMessage = userMessage.toLowerCase();
+            const explicitlyWantsFresh = freshBoardKeywords.some((keyword) =>
+              lowerCaseMessage.includes(keyword.toLowerCase())
+            );
+
+            if (!explicitlyWantsFresh) {
+              shouldReset = false;
+
+              await this.addMessage(
+                chatObjectId,
+                MessageRole.SYSTEM,
+                'Using existing board as reference for generating improvements.'
+              );
+            }
+          }
+
+          if (shouldReset) {
+            boardContext =
+              await BoardContextService.resetBoardContext(chatObjectId);
+          }
+
           if (intent.userId) {
             const newBoard = await AIService.generateBoard(
               userMessage,
@@ -225,11 +303,17 @@ class ChatService {
               (total, col) => total + (col.tasks?.length || 0),
               0
             );
-            responseContent = `✅ I've created a new board called "${newBoard.name}" with ${newBoard.columns.length} columns: ${newBoard.columns.map((c) => `"${c.name}"`).join(', ')}.\n\nThe board includes ${taskCount} tasks in total.\n\nWould you like me to:\n• Adjust any column names or workflows?\n• Add more tasks to a specific column?\n• Change the board's structure?`;
+            responseContent = `✅ I've created a new board called "${newBoard.name}" with ${newBoard.columns.length} columns: ${newBoard.columns.map((c) => `"${c.name}"`).join(', ')}.
+            The board includes ${taskCount} tasks in total.
+            Would you like me to:
+            • Adjust any column names or workflows?
+            • Add more tasks to a specific column?
+            • Change the board's structure?`;
           } else {
             responseContent =
               '🔍 Oops! I need to know which user this board belongs to. Could you please sign in or provide your user ID? This helps me save and organize your boards properly.';
           }
+
           if (responseContent === '') {
             responseContent = `🤔 I want to make sure I understand you correctly. Could you help me by:
             1. Being more specific about what you'd like to achieve
@@ -242,6 +326,7 @@ class ChatService {
             • "Break down this feature into smaller tasks: [feature]"`;
           }
           break;
+        }
 
         case 'improve_task':
           try {

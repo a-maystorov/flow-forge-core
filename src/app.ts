@@ -94,24 +94,59 @@ io.on('connection', (socket) => {
   }
 
   // Event for creating a new chat
-  socket.on('create chat', async (chatTitle = 'New Chat') => {
+  socket.on('new chat', async (title = 'New Chat') => {
     try {
-      // Create a new chat
-      const newChat = await chatService.createChat(userId, chatTitle);
+      console.log('Creating new chat');
+      const newChat = await chatService.createChat(userId, title);
 
-      // Set this chat as the currently selected chat for this socket
+      // Store the new chat ID in the socket mapping
       socketChatMap.set(socket.id, newChat._id);
 
-      // Emit the new chat back to the client
+      // Emit the chat created event
       socket.emit('chat created', {
-        _id: newChat._id.toString(), // Use string ID and ensure consistent property naming
-        chatId: newChat._id.toString(),
+        _id: newChat._id.toString(),
         title: newChat.title,
         createdAt: newChat.createdAt,
       });
+
+      // Join the chat room
+      socket.join(newChat._id.toString());
     } catch (err) {
       console.error('Error creating chat:', err);
       socket.emit('error', { message: 'Failed to create chat' });
+    }
+  });
+
+  // Event for creating a new chat from a board
+  socket.on('new chat from board', async (data) => {
+    try {
+      if (!data || !data.boardId) {
+        socket.emit('error', {
+          message: 'BoardId is required to create a chat from board',
+        });
+        return;
+      }
+
+      console.log(`Creating new chat from board: ${data.boardId}`);
+      const title = data.title || 'New Chat';
+      const newChat = await chatService.createChat(userId, title, data.boardId);
+
+      // Store the new chat ID in the socket mapping
+      socketChatMap.set(socket.id, newChat._id);
+
+      // Emit the chat created event
+      socket.emit('chat created', {
+        _id: newChat._id.toString(),
+        title: newChat.title,
+        createdAt: newChat.createdAt,
+        hasBoardContext: true,
+      });
+
+      // Join the chat room
+      socket.join(newChat._id.toString());
+    } catch (err) {
+      console.error('Error creating chat from board:', err);
+      socket.emit('error', { message: 'Failed to create chat from board' });
     }
   });
 
@@ -169,8 +204,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('chat message', async (msg) => {
+  socket.on('chat message', async (msgData) => {
     try {
+      // Handle both string messages and object messages with text property
+      const messageText = typeof msgData === 'string' ? msgData : msgData.text;
+
       // Get the currently selected chat ID for this socket connection
       const chatId = socketChatMap.get(socket.id);
 
@@ -193,32 +231,21 @@ io.on('connection', (socket) => {
       // Get the current chat ID (we know it exists at this point)
       const currentChatId = socketChatMap.get(socket.id)!;
 
-      socket.emit(
-        'chat message',
-        JSON.stringify({
-          chatId: currentChatId.toString(), // Include the chat ID with the message
-          from: 'User',
-          message: msg,
-        })
-      );
+      // Send back the user message to all clients in this chat
+      io.to(currentChatId.toString()).emit('chat message', {
+        from: 'user',
+        content: messageText,
+        chatId: currentChatId.toString(),
+      });
 
-      // 2. Emit loading message
-      const loadingMsgId = Date.now().toString();
-      socket.emit(
-        'chat message',
-        JSON.stringify({
-          chatId: currentChatId.toString(), // Include the chat ID with the message
-          from: 'AI Assistant',
-          loading: true,
-          id: loadingMsgId,
-          message: 'Thinking...',
-        })
-      );
+      // 2. Process the message with AI and get a response
+      const normalizedUserId = new mongoose.Types.ObjectId(userId);
 
+      // Process the message with AI and get a response
       const result = await chatService.processUserMessage(
         currentChatId,
-        userId,
-        msg
+        normalizedUserId,
+        messageText
       );
 
       // Log the board context to the console for debugging
@@ -236,7 +263,7 @@ io.on('connection', (socket) => {
           {
             chatId: currentChatId.toString(), // Include the chat ID with the message
             from: 'AI Assistant',
-            id: loadingMsgId,
+            id: Date.now().toString(), // Generate a unique ID for this message
             action: result.action,
             message: result.message.content,
             boardContext: result.boardContext, // Include the board context
