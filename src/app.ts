@@ -12,6 +12,7 @@ import { connectDB } from './config/database';
 import { errorHandler } from './middleware';
 import Chat from './models/chat.model';
 import authRoutes from './routes/auth.routes';
+import boardContextRoutes from './routes/board-context.routes';
 import boardRoutes from './routes/board.routes';
 import chatRoutes from './routes/chat.routes';
 import userRoutes from './routes/user.routes';
@@ -42,6 +43,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/boards', boardRoutes);
 app.use('/api/chats', chatRoutes);
+app.use('/api/board-context', boardContextRoutes);
 
 app.get('/chat-test', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));

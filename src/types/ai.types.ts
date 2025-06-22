@@ -1,9 +1,9 @@
 import { Types } from 'mongoose';
 import { IBoard } from '../models/board.model';
 import { IColumn } from '../models/column.model';
+import { MessageRole } from '../models/message.model';
 import { ISubtask } from '../models/subtask.model';
 import { ITask } from '../models/task.model';
-import { MessageRole } from '../models/message.model';
 
 // --- Raw AI Output Types ---
 // These represent the structure of JSON data returned by the OpenAI API
@@ -82,6 +82,7 @@ export type PreviewBoard = Pick<IBoard, 'name' | 'ownerId'> & {
  * Simplified representation of a column for context purposes
  */
 export interface ColumnContext {
+  _id?: Types.ObjectId | string;
   name: string;
   tasks: TaskContext[];
   position?: number;
@@ -91,15 +92,18 @@ export interface ColumnContext {
  * Simplified representation of a task for context purposes
  */
 export interface TaskContext {
+  _id?: Types.ObjectId | string;
   title: string;
   description?: string;
   subtasks?: SubtaskContext[];
+  position?: number;
 }
 
 /**
  * Simplified representation of a subtask for context purposes
  */
 export interface SubtaskContext {
+  _id?: Types.ObjectId | string;
   title: string;
   description?: string;
 }

@@ -6,6 +6,7 @@ export interface IChat {
   title: string;
   lastMessageAt: Date;
   boardContext: BoardContext;
+  boardId?: Types.ObjectId; // Optional reference to a created board
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +26,11 @@ const chatSchema = new Schema<IChat>(
     lastMessageAt: {
       type: Date,
       default: Date.now,
+    },
+    boardId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Board',
+      default: null,
     },
     boardContext: {
       name: {
