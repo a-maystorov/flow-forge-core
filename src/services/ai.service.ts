@@ -44,11 +44,19 @@ export class AIService {
             - All tasks should initially be placed in the first column (Backlog/To Do)
             - Each task MUST have:
               - 'title': A clear, concise title
-              - 'description': A detailed description of the task
+              - 'description': A detailed description of the task in Markdown format
               - 'subtasks': An array of 2-5 subtasks for each task
             - Each subtask should have:
               - 'title': A clear action item
-              - 'description': Additional details if needed
+              - 'description': Additional details in Markdown format
+
+            MARKDOWN FORMATTING:
+            - Use Markdown syntax for all descriptions
+            - Use headers (## or ###) for section titles
+            - Use **bold** for emphasis
+            - Use bullet points (- or *) for lists
+            - Use checkboxes (- [ ]) for actionable items
+            - Use code blocks with backticks for technical content
             
             FORMAT REQUIREMENTS:
             - Use double quotes for all JSON properties
@@ -583,15 +591,19 @@ export class AIService {
             Generate a single, well-defined task that fits naturally into the '${targetColumn.name}' column.
             
             ## Guidelines ##
-            1. Task Title:
-               - Clear and concise (5-10 words)
-               - Start with a verb (e.g., "Implement", "Design", "Review")
-               - Be specific and actionable
-            
-            2. Task Description:
-               - Provide enough detail for clear understanding
-               - Include acceptance criteria if applicable
-               - Keep it concise but informative
+          1. Task Title:
+             - Clear and concise (5-10 words)
+             - Start with a verb (e.g., "Implement", "Design", "Review")
+             - Be specific and actionable
+          
+          2. Task Description:
+             - Format the description in beautiful Markdown
+             - Use headers (## or ###) for section titles
+             - Use **bold** for emphasis and _italics_ for details
+             - Use bullet points (- or *) for lists
+             - Use checkboxes (- [ ]) for acceptance criteria
+             - Include code blocks with backticks for technical content when relevant
+             - Keep it concise but informative
             
             ## Response Format ##
             Return a JSON object with:
@@ -618,7 +630,7 @@ export class AIService {
 
       return {
         title: taskData.title || 'Unnamed Task',
-        description: taskData.description || '',
+        description: this.ensureMarkdownFormat(taskData.description),
       };
     } catch (error) {
       console.error('Error generating task:', error);
@@ -801,7 +813,7 @@ export class AIService {
         columnIndex: result.columnIndex,
         taskIndex: result.taskIndex,
         title: result.title,
-        description: result.description,
+        description: this.ensureMarkdownFormat(result.description),
       };
     } catch (error) {
       console.error('Error improving task description:', error);
@@ -901,11 +913,18 @@ export class AIService {
           The current board has the following context: ${JSON.stringify(boardContext, null, 2)}
 
           Your task is to:
-          1. Determine which task the user wants to break down
-          2. Generate a list of meaningful subtasks for it
-          3. Each subtask must include:
-             - title (string)
-             - description (string)
+        1. Determine which task the user wants to break down
+        2. Generate a list of meaningful subtasks for it
+        3. Each subtask must include:
+           - title (string): Clear and actionable title that starts with a verb
+           - description (string): Detailed description using Markdown formatting
+        
+        For Markdown descriptions:
+        - Use headers (## or ###) for section titles
+        - Use **bold** for emphasis and _italic_ for details
+        - Use bullet points (- or *) for lists
+        - Use checkboxes (- [ ]) for actionable items
+        - Include code blocks with backticks for technical content when relevant
           
           The response must be a valid JSON object like:
           {
@@ -1026,7 +1045,9 @@ export class AIService {
         taskIndex: result.taskIndex,
         subtaskIndex: result.subtaskIndex,
         title: result.title ?? originalSubtask.title,
-        description: result.description ?? originalSubtask.description ?? '',
+        description: this.ensureMarkdownFormat(
+          result.description ?? originalSubtask.description ?? ''
+        ),
       };
     } catch (error) {
       console.error('Error improving subtask description:', error);
@@ -1125,10 +1146,10 @@ export class AIService {
     (boardData.columns || []).forEach((column: RawAIColumnOutput) => {
       const columnTasks = (column.tasks || []).map((task: RawAITaskOutput) => ({
         title: task.title || 'Unnamed Task',
-        description: task.description || '',
+        description: this.ensureMarkdownFormat(task.description),
         subtasks: (task.subtasks || []).map((subtask) => ({
           title: subtask.title || 'Unnamed Subtask',
-          description: subtask.description || '',
+          description: this.ensureMarkdownFormat(subtask.description),
         })),
       }));
 
@@ -1168,8 +1189,44 @@ export class AIService {
   ): PreviewSubtask[] {
     return subtasksData.map((subtask: RawAISubtaskOutput) => ({
       title: subtask.title || 'Unnamed Subtask',
-      description: subtask.description || '',
+      description: this.ensureMarkdownFormat(subtask.description),
     }));
+  }
+
+  /**
+   * Ensures text is properly formatted in Markdown
+   * If the text already contains Markdown elements, it will be returned as is
+   * Otherwise, basic Markdown formatting will be applied
+   */
+  private ensureMarkdownFormat(text: string | undefined): string {
+    if (!text) return '';
+
+    // Simple check if text already contains markdown elements
+    const hasMarkdownElements = /[#*`_\-\[\]]/g.test(text);
+
+    if (hasMarkdownElements) {
+      return text; // Already contains markdown elements
+    }
+
+    // Add basic markdown formatting to plain text
+    // Split by paragraphs and format each
+    const paragraphs = text.split('\n\n');
+    return paragraphs
+      .map((paragraph) => {
+        // For short single-line paragraphs
+        if (paragraph.length < 80 && !paragraph.includes('\n')) {
+          return paragraph;
+        }
+
+        // For bullet point style text
+        if (paragraph.includes(':\n') || paragraph.match(/\d+\.\s/)) {
+          const [header, ...points] = paragraph.split('\n');
+          return `### ${header}\n${points.map((p) => `- ${p.replace(/^\d+\.\s*/, '')}`).join('\n')}`;
+        }
+
+        return paragraph;
+      })
+      .join('\n\n');
   }
 
   /**
@@ -1189,24 +1246,25 @@ export class AIService {
 
         AVAILABLE CAPABILITIES:
         1. **Board Management**
-        - Create new Kanban boards from scratch
-        - Generate new columns based on workflow needs
-        - Rename, reorder, or delete columns
-        - Analyze and optimize board structure
+        - Create new Kanban boards from scratch with structured columns and tasks
+        - Generate new columns with intelligent positioning
+        - Generate multiple columns at once based on project requirements
+        - Rename, reorder, or delete columns based on workflow needs
+        - Analyze and optimize board structure for better workflow
 
         2. **Task Management**
-        - Create new tasks with descriptions
-        - Move tasks between columns
-        - Generate multiple related tasks at once
-        - Improve and refine task descriptions
-        - Break down complex tasks into subtasks
-        - Improve existing subtask descriptions
+        - Create beautifully formatted tasks with Markdown descriptions
+        - Move tasks between columns intelligently
+        - Improve existing task titles and descriptions with enhanced formatting
+        - Break down tasks into subtasks with clear action items
+        - Improve subtask descriptions with Markdown formatting
+        - Delete specific tasks or subtasks on request
 
         3. **Workflow Analysis**
-        - Suggest workflow improvements
-        - Identify bottlenecks in current setup
-        - Recommend task prioritization
-        - Provide productivity tips
+        - Suggest workflow improvements based on current board state
+        - Identify bottlenecks in the current setup
+        - Recommend task prioritization strategies
+        - Provide productivity tips and workflow optimizations
 
         GUIDELINES:
         - If no board context is available, do not treat this as an error.
@@ -1214,7 +1272,12 @@ export class AIService {
         - Gently encourage creating a board only if it makes sense in the conversation.
         - When referencing tasks or columns, use their exact names from the context.
         - Keep responses concise but helpful (2–4 sentences).
-        - Use markdown for readability (**bold** for emphasis, \`code\` for board/column/task names).
+        - ALWAYS use markdown for readability and beautiful formatting:
+          - **Bold** for emphasis and important concepts
+          - *Italics* for supplementary information
+          - \`code\` for board/column/task names
+          - ### Headers for section titles
+          - Bullet lists for multiple points
         - Ask clarifying questions if the user's intent is unclear.
         - Maintain a friendly, professional, and encouraging tone.
         - Use emojis sparingly for engagement (e.g. 👋, ✅, 🚀).
