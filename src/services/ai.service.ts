@@ -776,11 +776,19 @@ export class AIService {
             2. Generate an improved title and description for that task
             3. Return the column index and task index of the identified task
             
+            For the description, use beautiful Markdown formatting:
+            - Use headers (## or ###) for section titles
+            - Use **bold** for emphasis and _italic_ for details
+            - Use bullet points (- or *) for lists
+            - Use checkboxes (- [ ]) for acceptance criteria
+            - Include code blocks with backticks for technical content when relevant
+            - Keep it concise but informative
+            
             The response should be a valid JSON object with:
             - columnIndex: number (index of the column containing the task)
             - taskIndex: number (index of the task in its column)
             - title: string (improved title)
-            - description: string (improved description)
+            - description: string (improved description in Markdown format)
             
             If the task cannot be clearly identified, return null for all fields.`,
           },
@@ -1002,13 +1010,21 @@ export class AIService {
               2. Improve the subtask description based on the user's intent.
               3. Only modify the title if the user explicitly mentions wanting a title change — otherwise, leave the title exactly as is.
               4. Return the indices of the column, task, and subtask along with the improved content.
+              
+              For the description, use beautiful Markdown formatting:
+              - Use headers (## or ###) for section titles
+              - Use **bold** for emphasis and _italic_ for details
+              - Use bullet points (- or *) for lists
+              - Use checkboxes (- [ ]) for acceptance criteria
+              - Include code blocks with backticks for technical content when relevant
+              - Keep it concise but informative
 
               The response should be a valid JSON object with:
               - columnIndex: number
               - taskIndex: number
               - subtaskIndex: number
               - title: string (subtask title — only changed if clearly requested)
-              - description: string (updated based on the user prompt)`,
+              - description: string (updated based on the user prompt, in Markdown format)`,
           },
           {
             role: 'user',
