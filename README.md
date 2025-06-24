@@ -16,7 +16,7 @@ A robust, production-ready backend service powering Flow Forge - an advanced tas
 - **Real-time Updates**: Socket.IO integration for live collaborative features
 - **MongoDB Integration**: Efficient data persistence with Mongoose ODM
 - **Comprehensive Task Management**: Complete CRUD operations for boards, columns, tasks, and subtasks
-- **AI-Powered Assistance**(In Progress): Intelligent features for board suggestions, task breakdown, and task improvement
+- **AI-Powered Assistance**: Intelligent features including interactive chat assistant, board suggestions, task breakdown, and task improvement with Markdown formatting
 - **Type Safety**: End-to-end TypeScript implementation with robust type definitions
 - **Automated Testing**: Comprehensive test suite with Jest
 - **Input Validation**: Request validation using Zod schemas
@@ -47,6 +47,30 @@ A robust, production-ready backend service powering Flow Forge - an advanced tas
 - **Husky 9.1**: Git hooks for code quality
 - **MongoDB Memory Server**: In-memory MongoDB for testing
 - **ts-node & nodemon**: For development environment
+
+## 🤖 AI Features
+
+### Interactive Chat Assistant
+
+- **Contextual Board Awareness**: AI assistant understands the current state of boards, columns, and tasks
+- **Natural Language Processing**: Conversational interface for task and board management
+- **Markdown Formatting**: Beautifully formatted responses with headers, lists, emphasis, and code blocks
+- **Task Generation**: Create new tasks with detailed descriptions
+- **Task Improvement**: Enhance existing task descriptions and titles
+- **Task Breakdown**: Split complex tasks into manageable subtasks
+
+### Smart Board Management
+
+- **Board Generation**: Create complete board structures from project descriptions
+- **Column Suggestions**: Generate appropriate columns based on workflow needs
+- **Workflow Analysis**: Get suggestions for optimizing your board structure
+
+### Pending Status System
+
+- **Preview Before Commit**: AI-generated board changes are marked as pending for user review
+- **Side-by-Side Comparison**: Compare original and AI-suggested changes before accepting
+- **Accept/Reject Flow**: Explicitly approve or reject proposed changes
+- **State Management**: Original state preservation for safe rollbacks
 
 ## 🏗️ Architecture
 
@@ -190,4 +214,4 @@ MIT
 
 ---
 
-© 2025 Flow Forge - Crafted with ❤️ by Alkin Maystorov
+© 2025 Flow Forge - Crafted with passion by Alkin Maystorov
