@@ -283,17 +283,13 @@ class BoardService {
 
       await existingBoard.save();
 
-      // Find existing columns for this board
       const existingColumns = await Column.find({ boardId: boardIdObj }).lean();
       const updatedColumnIds: Types.ObjectId[] = [];
       const columnMap = new Map<number, Types.ObjectId>();
 
-      // Get array of column names from the context for later comparison
       const contextColumnNames = sanitizedContext.columns
         ? sanitizedContext.columns.map((col) => col.name.toLowerCase())
         : [];
-
-      // Process columns in the context - create or update them
       if (sanitizedContext.columns) {
         for (
           let columnIndex = 0;
@@ -337,25 +333,18 @@ class BoardService {
         }
       }
 
-      // Delete columns that exist in the database but not in the context
       for (const existingColumn of existingColumns) {
         if (!contextColumnNames.includes(existingColumn.name.toLowerCase())) {
-          // Delete this column as it's not in the updated context
           await Column.findByIdAndDelete(existingColumn._id);
 
-          // Also delete all tasks associated with this column
           if (existingColumn.tasks && existingColumn.tasks.length > 0) {
-            // Find all tasks in this column
             const tasksToDelete = await Task.find({
               columnId: existingColumn._id,
             });
 
-            // Delete all subtasks of these tasks
             for (const task of tasksToDelete) {
               await Subtask.deleteMany({ taskId: task._id });
             }
-
-            // Delete the tasks
             await Task.deleteMany({ columnId: existingColumn._id });
           }
         }
@@ -363,7 +352,6 @@ class BoardService {
 
       await Board.findByIdAndUpdate(boardIdObj, { columns: updatedColumnIds });
 
-      // Process tasks within columns
       const taskMap = new Map<string, Types.ObjectId>();
 
       if (sanitizedContext.columns) {
@@ -379,16 +367,13 @@ class BoardService {
             continue;
           }
 
-          // Get existing tasks for this column
           const existingTasks = await Task.find({ columnId }).lean();
           const updatedTaskIds: Types.ObjectId[] = [];
 
-          // Store task titles from context for comparison
           const contextTaskTitles = columnContext.tasks
             ? columnContext.tasks.map((task) => task.title.toLowerCase())
             : [];
 
-          // Process tasks in the context
           if (columnContext.tasks && columnContext.tasks.length > 0) {
             for (
               let taskIndex = 0;
@@ -403,7 +388,6 @@ class BoardService {
               );
 
               if (!matchingTask) {
-                // Create new task
                 const taskData: TaskCreate = {
                   title: taskContext.title,
                   description: taskContext.description || '',
@@ -423,7 +407,6 @@ class BoardService {
                 taskMap.set(taskKey, newTask._id);
                 updatedTaskIds.push(newTask._id);
               } else {
-                // Update existing task
                 const taskId = matchingTask._id;
                 await Task.findByIdAndUpdate(taskId, {
                   title: taskContext.title,
@@ -443,23 +426,17 @@ class BoardService {
             }
           }
 
-          // Delete tasks that exist in the database but not in the context
           for (const existingTask of existingTasks) {
             if (!contextTaskTitles.includes(existingTask.title.toLowerCase())) {
-              // Delete this task as it's not in the updated context
               await Task.findByIdAndDelete(existingTask._id);
 
-              // Also delete all subtasks associated with this task
               await Subtask.deleteMany({ taskId: existingTask._id });
             }
           }
 
-          // Update the column with the correct task references
           await Column.findByIdAndUpdate(columnId, { tasks: updatedTaskIds });
         }
       }
-
-      // Process subtasks within tasks
       if (sanitizedContext.columns) {
         for (
           let columnIndex = 0;
@@ -485,18 +462,15 @@ class BoardService {
               continue;
             }
 
-            // Get existing subtasks for this task
             const existingSubtasks = await Subtask.find({ taskId }).lean();
             const updatedSubtaskIds: Types.ObjectId[] = [];
 
-            // Store subtask titles from context for comparison
             const contextSubtaskTitles = taskContext.subtasks
               ? taskContext.subtasks.map((subtask) =>
                   subtask.title.toLowerCase()
                 )
               : [];
 
-            // Process subtasks in the context
             if (taskContext.subtasks && taskContext.subtasks.length > 0) {
               for (
                 let subtaskIndex = 0;
@@ -512,7 +486,6 @@ class BoardService {
                 );
 
                 if (!matchingSubtask) {
-                  // Create new subtask
                   const subtaskData: SubtaskCreate = {
                     title: subtaskContext.title,
                     description: subtaskContext.description || '',
@@ -525,7 +498,6 @@ class BoardService {
                   const newSubtask = await Subtask.create(subtaskData);
                   updatedSubtaskIds.push(newSubtask._id);
                 } else {
-                  // Update existing subtask
                   const subtaskId = matchingSubtask._id;
                   await Subtask.findByIdAndUpdate(subtaskId, {
                     title: subtaskContext.title,
@@ -539,19 +511,15 @@ class BoardService {
               }
             }
 
-            // Delete subtasks that exist in the database but not in the context
             for (const existingSubtask of existingSubtasks) {
               if (
                 !contextSubtaskTitles.includes(
                   existingSubtask.title.toLowerCase()
                 )
               ) {
-                // Delete this subtask as it's not in the updated context
                 await Subtask.findByIdAndDelete(existingSubtask._id);
               }
             }
-
-            // Update task with the current subtask references
             await Task.findByIdAndUpdate(taskId, {
               subtasks: updatedSubtaskIds,
             });

@@ -169,20 +169,14 @@
     </div>
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      // Get authentication token from localStorage or session
-      // In a real app, you would get this from your authentication system
       let authToken = localStorage.getItem('token');
 
-      // If there's no token, show a login form or get a temporary session
       if (!authToken) {
-        // For demo purposes, we'll create a temporary session
         getTemporarySession();
       } else {
-        // Connect to socket with authentication
         connectSocket(authToken);
       }
 
-      // Function to get a temporary session
       async function getTemporarySession() {
         try {
           const response = await fetch('/api/auth/temp-session', {
@@ -196,7 +190,6 @@
           const data = await response.json();
 
           if (data.token) {
-            // Store token and connect
             localStorage.setItem('token', data.token);
             connectSocket(data.token);
           } else {
@@ -207,7 +200,6 @@
         }
       }
 
-      // Function to connect socket with authentication
       function connectSocket(token) {
         const socket = io({
           auth: {
@@ -215,14 +207,12 @@
           },
         });
 
-        // Handle connection errors
         socket.on('connect_error', (err) => {
           showError(
             `Connection error: ${err.message}. Please refresh the page.`
           );
         });
 
-        // Once connected successfully, initialize the chat interface
         socket.on('connect', () => {
           initializeChatInterface(socket);
         });
@@ -235,7 +225,6 @@
         document.body.prepend(errorDiv);
       }
 
-      // Initialize the chat interface once authenticated
       function initializeChatInterface(socket) {
         const form = document.getElementById('form');
         const input = document.getElementById('input');
@@ -244,14 +233,11 @@
         const chatList = document.getElementById('chat-list');
         const chatHeader = document.getElementById('chat-header');
 
-        // Store chat data
         let chats = [];
         let activeChatId = null;
 
-        // Initialize by getting all existing chats
         socket.emit('get chats');
 
-        // Create a new chat
         newChatBtn.addEventListener('click', () => {
           const chatName = prompt('Enter chat name:', 'New Chat');
           if (chatName) {
@@ -259,20 +245,16 @@
           }
         });
 
-        // Send message when form is submitted
         form.addEventListener('submit', (e) => {
           e.preventDefault();
           if (input.value && activeChatId) {
             socket.emit('chat message', input.value);
             input.value = '';
           } else if (input.value) {
-            // If no active chat, create one first
             socket.emit('create chat', 'New Chat');
-            // The message will be sent after chat is created and selected
             const pendingMessage = input.value;
             input.value = '';
 
-            // Listen for chat created event once
             const chatCreatedListener = (data) => {
               socket.emit('chat message', pendingMessage);
               socket.off('chat created', chatCreatedListener);
@@ -281,7 +263,6 @@
           }
         });
 
-        // Render chat list
         function renderChatList() {
           chatList.innerHTML = '';
           chats.forEach((chat) => {
@@ -308,57 +289,38 @@
           });
         }
 
-        // Select a chat
         function selectChat(chatId) {
           if (!chatId) return;
 
-          console.log('Selecting chat with ID:', chatId);
           activeChatId = chatId;
           socket.emit('select chat', chatId);
 
-          // Update UI
           const activeChat = chats.find((c) => c._id === chatId);
           if (activeChat) {
             chatHeader.textContent = activeChat.title;
           } else {
-            console.log('Active chat not found in chats array:', chatId, chats);
           }
 
-          // Clear messages
           messages.innerHTML = '';
-
-          // Update chat list UI
           renderChatList();
         }
 
-        // Handle receiving chat list
         socket.on('chats list', (data) => {
           chats = data;
           renderChatList();
         });
 
-        // Handle chat creation
         socket.on('chat created', (data) => {
-          console.log('Chat created:', data);
-          // Add to our chats array if it doesn't exist already
           if (!chats.some((chat) => chat._id === data._id)) {
             chats.unshift(data);
           }
-          // Select the newly created chat
           selectChat(data._id);
         });
+        socket.on('chat selected', (data) => {});
 
-        // Handle chat selection
-        socket.on('chat selected', (data) => {
-          // Already handled in selectChat function
-        });
-
-        // Handle errors
         socket.on('error', (data) => {
           alert(`Error: ${data.message}`);
         });
-
-        // Handle chat messages
         socket.on('chat message', (msg) => {
           const item = document.createElement('li');
 
@@ -370,17 +332,8 @@
               ? `\n[data]: ${JSON.stringify(parsed.data, null, 2)}`
               : '';
 
-            console.log(
-              'Message received for chat:',
-              parsed.chatId,
-              'Active chat:',
-              activeChatId
-            );
-
-            // Only display messages for the active chat
             if (parsed.chatId && parsed.chatId !== activeChatId) {
-              console.log('Skipping message for different chat');
-              return; // Skip messages for other chats
+              return;
             }
 
             item.textContent = `[${parsed.from}] ${content}${action}${data}`;

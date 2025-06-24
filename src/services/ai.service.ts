@@ -985,7 +985,7 @@ export class AIService {
    * Only updates the subtask title if the user explicitly asks for it.
    */
   async improveSubtask(
-    boardContext: BoardContext, // full board with columns, tasks, and subtasks
+    boardContext: BoardContext,
     prompt: string,
     chatContext: ChatContext
   ): Promise<{
@@ -1155,10 +1155,8 @@ export class AIService {
     boardData: RawAIBoardOutput,
     userId: Types.ObjectId
   ): PreviewBoard {
-    // Extract all tasks from all columns
     const allTasks: PreviewTask[] = [];
 
-    // Process each column and collect all tasks
     (boardData.columns || []).forEach((column: RawAIColumnOutput) => {
       const columnTasks = (column.tasks || []).map((task: RawAITaskOutput) => ({
         title: task.title || 'Unnamed Task',
@@ -1217,24 +1215,19 @@ export class AIService {
   private ensureMarkdownFormat(text: string | undefined): string {
     if (!text) return '';
 
-    // Simple check if text already contains markdown elements
     const hasMarkdownElements = /[#*`_\-\[\]]/g.test(text);
 
     if (hasMarkdownElements) {
-      return text; // Already contains markdown elements
+      return text;
     }
 
-    // Add basic markdown formatting to plain text
-    // Split by paragraphs and format each
     const paragraphs = text.split('\n\n');
     return paragraphs
       .map((paragraph) => {
-        // For short single-line paragraphs
         if (paragraph.length < 80 && !paragraph.includes('\n')) {
           return paragraph;
         }
 
-        // For bullet point style text
         if (paragraph.includes(':\n') || paragraph.match(/\d+\.\s/)) {
           const [header, ...points] = paragraph.split('\n');
           return `### ${header}\n${points.map((p) => `- ${p.replace(/^\d+\.\s*/, '')}`).join('\n')}`;

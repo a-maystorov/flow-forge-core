@@ -60,17 +60,14 @@ class ChatService {
           ? new mongoose.Types.ObjectId(userId)
           : userId;
 
-      // Initialize with empty board context by default
       let boardContext = BoardContextService.getEmptyBoardContext();
 
-      // If a boardId is provided, populate the board context
       if (boardId) {
         try {
           boardContext =
             await BoardContextService.populateBoardContextFromBoard(boardId);
         } catch (boardError) {
           console.error('Error populating board context:', boardError);
-          // If board fetching fails, fall back to empty context
         }
       }
 
@@ -101,7 +98,6 @@ class ChatService {
     content: string
   ) {
     try {
-      // Convert chatId to ObjectId if it's a string
       const chatObjectId =
         typeof chatId === 'string'
           ? new mongoose.Types.ObjectId(chatId)
@@ -115,7 +111,6 @@ class ChatService {
 
       await message.save();
 
-      // Update the lastMessageAt timestamp on the chat
       await Chat.findByIdAndUpdate(chatObjectId, {
         lastMessageAt: new Date(),
       });
@@ -134,7 +129,6 @@ class ChatService {
    */
   async getChatMessages(chatId: string | mongoose.Types.ObjectId) {
     try {
-      // Convert chatId to ObjectId if it's a string
       const chatObjectId =
         typeof chatId === 'string'
           ? new mongoose.Types.ObjectId(chatId)
@@ -150,13 +144,7 @@ class ChatService {
       throw error;
     }
   }
-  /**
-   * Process a user message and generate an AI response
-   * @param chatId - The ID of the chat
-   * @param userId - The ID of the user
-   * @param userMessage - The message from the user
-   * @returns The AI response message
-   */
+
   /**
    * Process a user message and generate an AI response
    * @param chatId - The ID of the chat
@@ -596,7 +584,6 @@ class ChatService {
               break;
             }
 
-            // Check if we can delete the column (must be empty)
             const deleteCheck = await AIService.deleteColumn(
               boardContext,
               columnToDelete.name
@@ -607,7 +594,6 @@ class ChatService {
               break;
             }
 
-            // If we get here, it's safe to delete the column
             const updatedColumns = boardContext.columns
               .filter(
                 (col) =>
@@ -641,15 +627,12 @@ class ChatService {
                 chatContext
               );
 
-            // Create a deep copy of the columns array to avoid mutating the state directly
             const updatedColumns = [...boardContext.columns];
             const task = updatedColumns[columnIndex].tasks[taskIndex];
 
-            // Remove the subtask from the task's subtasks array
             if (task.subtasks && task.subtasks.length > subtaskIndex) {
               task.subtasks.splice(subtaskIndex, 1);
 
-              // Update the board context
               await updateBoardContext({ columns: updatedColumns });
               boardContext = { ...boardContext, columns: updatedColumns };
 
@@ -733,7 +716,6 @@ class ChatService {
               chatContext
             );
 
-            // Find the target column (BACKLOG > TODO > first column)
             let targetColumn = boardContext.columns.find((col) =>
               col.name.trim().toUpperCase().includes('BACKLOG')
             );
@@ -918,7 +900,6 @@ class ChatService {
     boardContext: BoardContext
   ): Promise<MessageIntent> {
     try {
-      // Prepare board context summary
       const boardSummary = {
         columns: boardContext.columns.map((col) => ({
           name: col.name,
@@ -1023,7 +1004,6 @@ class ChatService {
       return intent;
     } catch (error) {
       console.error('Error classifying intent with LLM:', error);
-      // If LLM classification fails, return general conversation as default
       return {
         action: 'general_conversation',
         userId,
