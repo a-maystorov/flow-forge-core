@@ -283,8 +283,17 @@ class ChatService {
               })),
             };
 
-            await updateBoardContext(updatedBoardContext);
-            boardContext = { ...boardContext, ...updatedBoardContext };
+            // Update the board context directly
+            await BoardContextService.updateBoardContext(
+              chatObjectId,
+              updatedBoardContext
+            );
+
+            boardContext =
+              await BoardContextService.getBoardContext(chatObjectId);
+            isBoardContextUpdated = true;
+
+            // await updateBoardContext(updatedBoardContext);
 
             actionResult = newBoard;
             const taskCount = newBoard.columns.reduce(
@@ -879,7 +888,7 @@ class ChatService {
         message: assistantMessage,
         action: intent.action,
         result: actionResult,
-        boardContext: isBoardContextUpdated ? boardContext : undefined,
+        boardContext: boardContext,
       };
     } catch (error) {
       console.error('Error processing user message:', error);
@@ -910,36 +919,38 @@ class ChatService {
       const systemPrompt = {
         role: 'system' as const,
         content: `You are an intent classifier for a Kanban board application called Flow Forge.
-        Current board state:
-        ${JSON.stringify(boardSummary, null, 2)}
+      Current board state:
+      ${JSON.stringify(boardSummary, null, 2)}
 
-        Analyze the conversation and the user's latest message to determine the intent.
-        
-        Available intents:
-        - generate_board: Create a new board
-        - improve_task: Improve a task description
-        - break_down_task: Break down a task into subtasks
-        - generate_column: Add a new column
-        - generate_multiple_columns: Add multiple columns
-        - rename_column: Rename an existing column
-        - move_column: Move a column to a different position
-        - move_task: Move a task to a different column
-        - delete_column: Delete a column
-        - generate_task: Create a new task
-        - delete_task: Delete a task
-        - delete_subtask: Delete a subtask from a task
-        - improve_subtask: Improve a subtask's title or description
-        - general_conversation: General queries
-        
-        Pay attention to the conversation context to handle follow-up messages.
-        For example, if the assistant just asked "Which task?" the next message is likely the task name.
-        
-        Respond with a JSON object containing:
-        - intent: one of the intent names above
-        - taskTitle: extracted task title if applicable
-        - taskDescription: extracted task description if applicable
-        - columnName: suggested column name if applicable
-        - currentColumnName: name of the column to rename/move/delete if applicable`,
+      Analyze the conversation and the user's latest message to determine the intent.
+      
+      Available intents:
+      - generate_board: Create a new board OR generate any kind of plan/study plan/project plan/task organization. Keywords: "create board", "generate", "plan", "organize", "help me", "study plan", "project for", "make a board"
+      - improve_task: Improve a task description
+      - break_down_task: Break down a task into subtasks
+      - generate_column: Add a new column
+      - generate_multiple_columns: Add multiple columns
+      - rename_column: Rename an existing column
+      - move_column: Move a column to a different position
+      - move_task: Move a task to a different column
+      - delete_column: Delete a column
+      - generate_task: Create a new task
+      - delete_task: Delete a task
+      - delete_subtask: Delete a subtask from a task
+      - improve_subtask: Improve a subtask's title or description
+      - general_conversation: General queries, greetings, or questions about capabilities
+      
+      IMPORTANT: If the board is currently empty (no columns) and the user asks for help with ANY kind of planning, organization, or task management, classify it as "generate_board" rather than "general_conversation".
+      
+      Pay attention to the conversation context to handle follow-up messages.
+      For example, if the assistant just asked "Which task?" the next message is likely the task name.
+      
+      Respond with a JSON object containing:
+      - intent: one of the intent names above
+      - taskTitle: extracted task title if applicable
+      - taskDescription: extracted task description if applicable
+      - columnName: suggested column name if applicable
+      - currentColumnName: name of the column to rename/move/delete if applicable`,
       };
 
       const messages = [
@@ -963,7 +974,6 @@ class ChatService {
       const classification = JSON.parse(content);
 
       // Map the classification to our MessageIntent interface
-      // The LLM returns an intent type and optional context fields
       const intent: MessageIntent = {
         action: (classification.intent || 'general_conversation') as
           | 'generate_board'
@@ -983,22 +993,54 @@ class ChatService {
         userId,
       };
 
-      // Extract optional context fields that the LLM might have identified
-      // These fields provide additional details about the user's intent
+      // Extract optional context fields
       if (classification.taskTitle) {
-        intent.taskTitle = classification.taskTitle; // e.g., "login form" in "Improve the login form"
+        intent.taskTitle = classification.taskTitle;
       }
 
       if (classification.taskDescription) {
-        intent.taskDescription = classification.taskDescription; // Detailed description of the task
+        intent.taskDescription = classification.taskDescription;
       }
 
       if (classification.columnName) {
-        intent.columnName = classification.columnName; // Target column for the action
+        intent.columnName = classification.columnName;
       }
 
       if (classification.currentColumnName) {
-        intent.currentColumnName = classification.currentColumnName; // Original column name for move/rename operations
+        intent.currentColumnName = classification.currentColumnName;
+      }
+
+      // Fallback: If board is empty and user is asking for planning help, override to generate_board
+      if (
+        boardContext.columns.length === 0 &&
+        intent.action === 'general_conversation'
+      ) {
+        const lowerMessage = message.toLowerCase();
+        const planningKeywords = [
+          'plan',
+          'generate',
+          'create',
+          'organize',
+          'make',
+          'build',
+          'design',
+          'help me',
+          'study',
+          'project',
+          'workflow',
+          'board',
+        ];
+
+        const hasPlanningKeyword = planningKeywords.some((keyword) =>
+          lowerMessage.includes(keyword)
+        );
+
+        if (hasPlanningKeyword) {
+          return {
+            action: 'generate_board',
+            userId,
+          };
+        }
       }
 
       return intent;
