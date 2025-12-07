@@ -57,7 +57,15 @@ describe('database configuration', () => {
       await connectDB();
 
       expect(MongoMemoryServer.create).not.toHaveBeenCalled();
-      expect(mongoose.connect).toHaveBeenCalledWith('mongodb://production-uri');
+      expect(mongoose.connect).toHaveBeenCalledWith(
+        'mongodb://production-uri',
+        expect.objectContaining({
+          tls: true,
+          tlsAllowInvalidCertificates: false,
+          serverSelectionTimeoutMS: 5000,
+          socketTimeoutMS: 45000,
+        })
+      );
       expect(mockConsoleLog).toHaveBeenCalledWith('MongoDB Connected');
     });
 
