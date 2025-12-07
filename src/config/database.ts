@@ -14,7 +14,12 @@ const connectDB = async () => {
       await mongoose.connect(uri);
     } else {
       const db = process.env.MONGO_URI as string;
-      await mongoose.connect(db);
+      await mongoose.connect(db, {
+        tls: true,
+        tlsAllowInvalidCertificates: false,
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+      });
     }
     console.log('MongoDB Connected');
   } catch (error) {
